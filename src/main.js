@@ -79,6 +79,7 @@ function applyRemote(c) {
 }
 
 async function boot() {
+  if (!tg.hasSession()) await rc.logout();
   await gate();
   rc.watchConfig(applyRemote);
   if (settings.stats) rc.heartbeat();
@@ -98,6 +99,12 @@ const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.
 const saveUd = () => localStorage.setItem("nwios_user", JSON.stringify(ud));
 let scanNote = "";
 let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "";
+
+const ICONS = {
+  all: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/></svg>',
+  wl: '<svg viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>',
+  fav: '<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.8-8 11-8 11z"/></svg>'
+};
 
 const SORTS = {
   added: (a, b) => b.at - a.at,
@@ -132,8 +139,8 @@ const percent = (g) => {
 
 function cardHtml(g, bar) {
   const v = g.v;
-  return `<button class="card" data-k="${esc(g.key)}"><div class="poster">${v.poster ? `<img src="${tmdb.img(v.poster)}" loading="lazy" alt="">` : esc(title(v).slice(0, 1).toUpperCase())}${watched(g) ? '<i class="tick">✓</i>' : ""}${bar ? `<i class="prog" style="width:${percent(g)}%"></i>` : ""}</div>
-    <span class="t">${esc(title(v))}</span><span class="s">${year(v)}${v.rating ? " · ★ " + v.rating.toFixed(1) : ""}${g.files.length > 1 ? " · " + g.files.length + " files" : ""}</span></button>`;
+  return `<button class="card" data-k="${esc(g.key)}"><div class="poster">${v.poster ? `<img src="${tmdb.img(v.poster)}" loading="lazy" alt="">` : esc(title(v).slice(0, 1).toUpperCase())}${v.rating ? `<i class="rate">★ ${v.rating.toFixed(1)}</i>` : ""}${watched(g) ? '<i class="tick">✓</i>' : ""}${bar ? `<i class="prog" style="width:${percent(g)}%"></i>` : ""}</div>
+    <span class="t">${esc(title(v))}</span><span class="s">${year(v)}${g.files.length > 1 ? " · " + g.files.length + " files" : ""}</span></button>`;
 }
 
 function select(id, label, opts, cur) {
@@ -144,7 +151,8 @@ function home(q = "") {
   const all = groups();
   const hide = settings.hide && tmdb.hasKey();
   const ql = q.toLowerCase();
-  let list = all.filter((g) => !hide || g.v.tmdb > 0);
+  let list = all.filter((g) => !hide || g.v.tmdb > 0 || g.files.some((f) => !f.tried));
+  const hiddenN = tab === "all" ? all.length - list.length : 0;
   if (tab === "wl") list = list.filter((g) => ud.wl[g.key]);
   if (tab === "fav") list = list.filter((g) => ud.fav[g.key]);
   list = list.filter((g) =>
@@ -157,21 +165,24 @@ function home(q = "") {
   const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((t) => !QUALITIES.includes(t) && t !== "HEVC").sort();
   const cont = tab === "all" && !q && !fGenre && !fLang && !fQual ? list.filter(started) : [];
   const names = { all: "Home", wl: "Watchlist", fav: "Favorites" };
-  view(`<header class="bar"><b>NWFlix iOS</b><div><button id="scan" class="ico">Rescan</button><button id="set" class="ico">Settings</button></div></header>
+  view(`<header class="bar"><span class="brand"><img src="icon.png" alt="">NWFlix iOS</span><div><button id="scan" class="ico">Rescan</button><button id="set" class="ico">Settings</button></div></header>
     <div class="search"><input id="q" type="search" placeholder="Search movies or cast" value="${esc(q)}"></div>
     <div class="filters">
       <select id="so">${Object.entries(SORT_NAMES).map(([k, n]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${n}</option>`).join("")}</select>
       ${select("fg", "Genre", genres, fGenre)}${select("fl", "Language", langs, fLang)}${select("fq", "Quality", QUALITIES, fQual)}
     </div>
-    <p id="status" class="muted"></p>
+    <p id="status" class="muted">${esc(scanNote)}</p>
+    ${hiddenN ? `<p class="muted">${hiddenN} files without details are hidden. <button id="showall" class="linkbtn">Show them</button></p>` : ""}
     ${cont.length ? `<h3 class="sec">Continue watching</h3><div class="row">${cont.map((g) => cardHtml(g, true)).join("")}</div>` : ""}
     <main class="grid">${list.map((g) => cardHtml(g, false)).join("")}</main>
     ${list.length ? "" : `<p class="muted center">${tab === "all" ? "No movies yet. Tap Rescan." : "Nothing here yet."}</p>`}
-    <nav class="tabs">${Object.entries(names).map(([k, n]) => `<button data-t="${k}" class="${k === tab ? "on" : ""}">${n}</button>`).join("")}</nav>`);
+    <nav class="tabs">${Object.entries(names).map(([k, n]) => `<button data-t="${k}" class="${k === tab ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`);
   const qi = document.getElementById("q");
   qi.oninput = () => { const v = qi.value; home(v); const n = document.getElementById("q"); n.focus(); n.setSelectionRange(v.length, v.length); };
   document.getElementById("scan").onclick = rescan;
   document.getElementById("set").onclick = () => settingsView();
+  const sa = document.getElementById("showall");
+  if (sa) sa.onclick = () => { settings.hide = false; save(); home(q); };
   document.getElementById("so").onchange = (e) => { sortBy = e.target.value; home(q); };
   document.getElementById("fg").onchange = (e) => { fGenre = e.target.value; home(q); };
   document.getElementById("fl").onchange = (e) => { fLang = e.target.value; home(q); };
@@ -189,10 +200,10 @@ function detail(g, back) {
   const again = () => detail(g, back);
   view(`<div class="hero" ${v.backdrop ? `style="background-image:linear-gradient(#0000,#08090a),url(${tmdb.img(v.backdrop, "w780")})"` : ""}>
       <button id="b" class="ico">Back</button></div>
-    <div class="info"><h1>${esc(title(v))}</h1>
+    <div class="info ${v.poster ? "hasp" : ""}">${v.poster ? `<img class="pimg" src="${tmdb.img(v.poster)}" alt="">` : ""}<h1>${esc(title(v))}</h1>
       <p class="muted nopad">${[year(v), v.runtime ? v.runtime + " min" : "", v.rating ? "★ " + v.rating.toFixed(1) : ""].filter(Boolean).join(" · ")}</p>
       ${v.genres ? `<p class="muted nopad">${esc(v.genres)}</p>` : ""}
-      <button id="p" class="btn">${resumeFile ? "Resume" : "Play"}</button>
+      <button id="p" class="btn"><svg class="pl" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>${resumeFile ? "Resume" : "Play"}</button>
       <div class="acts"><button id="wl" class="ghost">${ud.wl[g.key] ? "In watchlist" : "Add to watchlist"}</button><button id="fv" class="ghost">${ud.fav[g.key] ? "Favorite ♥" : "Favorite ♡"}</button><button id="sn" class="ghost">${watched(g) ? "Mark unwatched" : "Mark watched"}</button></div>
       ${v.overview ? `<p>${esc(v.overview)}</p>` : ""}
       ${v.cast && v.cast.length ? `<h3>Cast & crew</h3><div class="chips">${v.cast.map((c) => `<button class="chip" data-p="${esc(c.n)}">${esc(c.n)}${c.c ? `<small>${esc(c.c)}</small>` : ""}</button>`).join("")}</div>` : ""}
@@ -238,10 +249,10 @@ function seriesDetail(g, back, season) {
   const shown = eps.filter((e) => e.s === cur);
   view(`<div class="hero" ${v.backdrop ? `style="background-image:linear-gradient(#0000,#010314),url(${tmdb.img(v.backdrop, "w780")})"` : ""}>
       <button id="b" class="ico">Back</button></div>
-    <div class="info"><h1>${esc(title(v))}</h1>
+    <div class="info ${v.poster ? "hasp" : ""}">${v.poster ? `<img class="pimg" src="${tmdb.img(v.poster)}" alt="">` : ""}<h1>${esc(title(v))}</h1>
       <p class="muted nopad">${[year(v), v.runtime ? v.runtime + " min" : "", v.rating ? "★ " + v.rating.toFixed(1) : "", eps.length + " episodes"].filter(Boolean).join(" · ")}</p>
       ${v.genres ? `<p class="muted nopad">${esc(v.genres)}</p>` : ""}
-      <button id="p" class="btn">${open ? "Resume" : "Play"}</button>
+      <button id="p" class="btn"><svg class="pl" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>${open ? "Resume" : "Play"}</button>
       <div class="acts"><button id="wl" class="ghost">${ud.wl[g.key] ? "In watchlist" : "Add to watchlist"}</button><button id="fv" class="ghost">${ud.fav[g.key] ? "Favorite ♥" : "Favorite ♡"}</button></div>
       ${v.overview ? `<p>${esc(v.overview)}</p>` : ""}
       <div class="chips">${seasons.map((s) => `<button class="chip ${s === cur ? "on" : ""}" data-s="${s}">${s ? "Season " + s : "Episodes"}</button>`).join("")}</div>
@@ -296,7 +307,7 @@ async function rescan() {
     const old = new Map(library.map((m) => [m.id, m]));
     library = res.items.map((m) => old.get(m.id) || m);
     localStorage.setItem(LIB, JSON.stringify(library));
-    scanNote = res.items.length ? "" : "Checked " + res.chats + " chats and found no movies" + (res.errors ? " (" + res.errors + " chats could not be read)." : ".");
+    scanNote = res.items.length ? "" : "Checked " + res.chats + " chats · " + res.docs + " files seen · " + res.passed + " passed the movie check" + (res.errors ? " · " + res.errors + " chats unreadable (" + res.firstErr + ")" : "");
   } catch (e) { scanNote = "Scan failed: " + (e.message || e); }
   home();
   const sn = document.getElementById("status"); if (sn) sn.textContent = scanNote;
