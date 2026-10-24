@@ -20,6 +20,12 @@
     <header><h1>NWFlix iOS admin</h1><span id="who"></span><button id="signout" class="ghost">Sign out</button></header>
 
     <div class="box">
+      <h2>iOS users</h2>
+      <button id="u-load" class="ghost">Load stats</button>
+      <pre id="u-out" class="note"></pre>
+    </div>
+
+    <div class="box">
       <h2>Maintenance</h2>
       <label class="row"><input id="m-on" type="checkbox"> Block the web app</label>
       <input id="m-title" placeholder="Title">
@@ -35,6 +41,7 @@
       <textarea id="a-msg" rows="4" placeholder="Message"></textarea>
       <input id="a-btn" placeholder="Button text (optional)">
       <input id="a-url" placeholder="Button link, https:// (optional)">
+      <input id="a-countries" placeholder="Only these countries, e.g. IN,US (empty = everyone)">
       <input id="a-exp" type="number" min="0" placeholder="Hide after this many hours (empty = never)">
       <label class="row"><input id="a-dismiss" type="checkbox" checked> Users can close it</label>
       <div class="two"><button id="a-send">Send</button><button id="a-clear" class="ghost">Remove</button></div>
