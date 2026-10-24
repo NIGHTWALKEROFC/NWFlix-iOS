@@ -115,3 +115,10 @@ export async function enrich(items, onProgress, onSave) {
   await Promise.all([worker(), worker(), worker()]);
   onSave();
 }
+
+export async function find(q) {
+  const j = await get("/search/movie", { query: q, include_adult: "false" });
+  return (j.results || []).slice(0, 10).map((o) => ({ id: o.id, title: o.title || "", year: yearOf(o.release_date), poster: o.poster_path || "" }));
+}
+
+export { details };
