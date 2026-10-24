@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, Timestamp, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp({
   apiKey: "AIzaSyB1k7Js9TtR-NHriFYAC3EfAnxN-uPPUFc",
@@ -45,7 +45,7 @@ $("a-send").onclick = async () => {
   try {
     await save({
       annId: String(Date.now()), annTitle: $("a-title").value.trim(), annMessage: msg,
-      annButtonText: $("a-btn").value.trim(), annButtonUrl: url, annDismissible: $("a-dismiss").checked,
+      annButtonText: $("a-btn").value.trim(), annButtonUrl: url, annDismissible: $("a-dismiss").checked, annCountries: $("a-countries").value.trim(),
       annExpiresAt: hours > 0 ? Timestamp.fromMillis(Date.now() + hours * 3600e3) : Timestamp.fromMillis(0)
     });
     say("a-out", "Sent. People with the web app open get it within seconds.", true);
@@ -64,3 +64,19 @@ onAuthStateChanged(auth, (u) => {
   $("app").classList.toggle("hidden", !ok);
   if (ok) { $("who").textContent = u.email; load().catch((e) => say("m-out", "Could not load (is this the admin account?): " + (e.code || e.message), false)); }
 });
+
+const top = (rows, key) => {
+  const n = {};
+  rows.forEach((r) => { const k = r[key] || "?"; n[k] = (n[k] || 0) + 1; });
+  return Object.entries(n).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, c]) => k + ": " + c).join("\n  ") || "-";
+};
+$("u-load").onclick = async () => {
+  $("u-out").textContent = "Loading...";
+  try {
+    const q = query(collection(getFirestore(app), "users"), where("os", ">=", "iOS"), where("os", "<", "iOT"));
+    const rows = (await getDocs(q)).docs.map((d) => d.data());
+    const ago = (h) => rows.filter((r) => r.lastSeen && r.lastSeen.toMillis() > Date.now() - h * 3600e3).length;
+    $("u-out").textContent = "Total: " + rows.length + "\nActive 24h: " + ago(24) + "\nActive 7 days: " + ago(168) + "\nActive 30 days: " + ago(720) +
+      "\nCountries:\n  " + top(rows, "country") + "\niOS versions:\n  " + top(rows, "os") + "\nApp versions:\n  " + top(rows, "v");
+  } catch (e) { $("u-out").textContent = "Could not load: " + (e.code || e.message); }
+};
