@@ -17,11 +17,45 @@ const TAG_GLUED = /^[A-Z]{1,4}(?=[A-Z][a-z]{2,})/;
 export const extension = (n) => (n.includes(".") ? n.split(".").pop().toLowerCase() : "");
 const stripExt = (n) => (VIDEO_EXT.has(extension(n)) ? n.slice(0, n.lastIndexOf(".")) : n);
 
+let handles = [];
+const TOKEN = /[^_\s.\-]+/g;
+
+export function learnHandles(names) {
+  const stems = [...new Set(names.map((n) => stripExt(n).trim()).filter((s) => s.startsWith("@")))]
+    .map((s) => (s.match(TOKEN) || []).slice(0, 7).map((x) => x.toLowerCase())).filter((t) => t.length >= 2);
+  const count = new Map(), next = new Map();
+  for (const t of stems) for (let k = 1; k <= Math.min(5, t.length - 1); k++) {
+    const key = t.slice(0, k).join("_");
+    count.set(key, (count.get(key) || 0) + 1);
+    if (!next.has(key)) next.set(key, new Set());
+    next.get(key).add(t[k]);
+  }
+  const found = new Map();
+  for (const t of stems) for (let k = 1; k <= Math.min(5, t.length - 1); k++) {
+    const key = t.slice(0, k).join("_");
+    if ((count.get(key) || 0) >= 3 && (next.get(key) ? next.get(key).size : 0) >= 3) { found.set(key, t.slice(0, k)); break; }
+  }
+  handles = [...found.values()].sort((a, b) => b.length - a.length);
+}
+
+function stripHandle(raw) {
+  const t = raw.trimStart();
+  if (!t.startsWith("@")) return raw;
+  const toks = [...t.matchAll(TOKEN)].slice(0, 6);
+  for (const h of handles) {
+    if (toks.length > h.length && h.every((x, i) => toks[i][0].toLowerCase() === x)) {
+      const last = toks[h.length - 1];
+      return t.slice(last.index + last[0].length).replace(/^[_ .\-]+/, "");
+    }
+  }
+  return t.replace(HANDLE, "");
+}
+
 function stripPrefixes(raw) {
   let t = raw;
   for (let i = 0; i < 4; i++) {
     const before = t;
-    t = t.replace(WWW_PREFIX, "").replace(DIGIT_SITE, "").replace(SITE_DASH, "").replace(HANDLE, "").replace(BRACKETS, "");
+    t = stripHandle(t.replace(WWW_PREFIX, "").replace(DIGIT_SITE, "").replace(SITE_DASH, "")).replace(BRACKETS, "");
     if (t === before) break;
   }
   return t;
