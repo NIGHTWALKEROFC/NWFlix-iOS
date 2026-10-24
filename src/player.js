@@ -21,7 +21,7 @@ function parseSubs(text) {
   }).filter(Boolean);
 }
 
-export function play({ m, label, settings, pos, save, view, back, onSeen }) {
+export function play({ m, label, settings, pos, save, view, back, onSeen, next }) {
   const risky = /\.(mkv|avi|wmv|flv|ts)$/i.test(m.name);
   view(`<div class="player" id="pl">
     <video id="v" playsinline autoplay preload="auto"></video>
@@ -80,7 +80,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen }) {
   });
   v.addEventListener("play", () => { $("pp").textContent = "❚❚"; show(); });
   v.addEventListener("pause", () => { $("pp").textContent = "▶"; pl.classList.add("show"); });
-  v.addEventListener("ended", () => { if (!marked) { marked = true; onSeen(m); } pos[m.id] = 0; save(); });
+  v.addEventListener("ended", () => { if (!marked) { marked = true; onSeen(m); } pos[m.id] = 0; save(); if (next) { clearInterval(tick); next(); } });
   v.addEventListener("error", () => { $("msg").textContent = "This file can't be played in your browser."; pl.classList.add("show"); });
 
   const tick = setInterval(() => {
