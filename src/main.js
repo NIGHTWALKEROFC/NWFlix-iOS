@@ -1,4 +1,3 @@
-import "./style.css";
 import * as tg from "./tg.js";
 import * as rc from "./remote.js";
 import * as tmdb from "./tmdb.js";
@@ -11,7 +10,7 @@ const POS = "nwios_pos";
 const SET = "nwios_set";
 let library = JSON.parse(localStorage.getItem(LIB) || "[]");
 let pos = JSON.parse(localStorage.getItem(POS) || "{}");
-let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true }, JSON.parse(localStorage.getItem(SET) || "{}"));
+let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true }, JSON.parse(localStorage.getItem(SET) || "{}"));
 let pending = null;
 
 const save = () => localStorage.setItem(SET, JSON.stringify(settings));
@@ -65,7 +64,9 @@ function applyRemote(c) {
     box.innerHTML = `<h1>${esc(c.maintenanceTitle || "We'll be right back")}</h1><p class="muted">${esc(c.maintenanceMessage || "NWFlix is being updated. Please try again in a little while.")}</p>`;
     return;
   }
-  const live = c.annId && localStorage.getItem("nwios_ann") !== c.annId && (!c.annExpiresAt || Date.now() < c.annExpiresAt);
+  const here = (navigator.language.split("-")[1] || "").toUpperCase();
+  const aimed = !c.annCountries || c.annCountries.split(",").map((x) => x.trim().toUpperCase()).includes(here);
+  const live = c.annId && aimed && localStorage.getItem("nwios_ann") !== c.annId && (!c.annExpiresAt || Date.now() < c.annExpiresAt);
   if (!live) { box.className = ""; box.innerHTML = ""; return; }
   const link = c.annButtonText && c.annButtonUrl.startsWith("https://");
   box.className = "cover dim";
@@ -80,6 +81,7 @@ function applyRemote(c) {
 async function boot() {
   await gate();
   rc.watchConfig(applyRemote);
+  if (settings.stats) rc.heartbeat();
   if (!tg.hasKeys()) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">Telegram keys are missing in this build.</p></div>'); return; }
   view('<div class="login"><div class="spin"></div></div>');
   if (!("serviceWorker" in navigator)) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">This browser cannot stream. Update iOS and open this page in Safari.</p></div>'); return; }
@@ -94,6 +96,7 @@ async function boot() {
 
 const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.getItem("nwios_user") || "{}"));
 const saveUd = () => localStorage.setItem("nwios_user", JSON.stringify(ud));
+let scanNote = "";
 let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "";
 
 const SORTS = {
@@ -109,13 +112,14 @@ const QUALITIES = ["4K", "1080p", "720p", "480p"];
 function groups() {
   const map = new Map();
   for (const f of library) {
-    const k = f.tmdb > 0 ? "t" + f.tmdb : "n" + f.title.toLowerCase().replace(/[^a-z0-9]/g, "") + f.year;
+    const k = f.tmdb > 0 ? (f.series ? "s" : "t") + f.tmdb : "n" + f.title.toLowerCase().replace(/[^a-z0-9]/g, "") + f.year;
     if (!map.has(k)) map.set(k, []);
     map.get(k).push(f);
   }
   return [...map.entries()].map(([key, files]) => ({ key, files, v: files.find((f) => f.tmdb > 0) || files[0], at: Math.max(...files.map((f) => f.at)) }));
 }
 
+const isSeries = (g) => g.v.series || g.v.season > 0;
 const byKey = (k) => groups().find((g) => g.key === k);
 const title = (m) => m.name || m.title;
 const year = (m) => m.year || "";
@@ -177,6 +181,7 @@ function home(q = "") {
 }
 
 function detail(g, back) {
+  if (isSeries(g)) return seriesDetail(g, back);
   const v = g.v;
   const files = g.files.slice().sort((a, b) => b.size - a.size);
   const resumeFile = files.filter((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]).sort((a, b) => pos[b.id] - pos[a.id])[0];
@@ -206,6 +211,49 @@ function detail(g, back) {
   document.querySelectorAll(".chip").forEach((b) => (b.onclick = () => person(b.dataset.p, again)));
   const fx = document.getElementById("fix");
   if (fx) fx.onclick = () => fix(g, back);
+}
+
+function episodes(g) {
+  const map = new Map();
+  for (const f of g.files) {
+    const k = (f.season || 0) * 1000 + (f.episode || 0);
+    if (!map.has(k)) map.set(k, { s: f.season || 0, e: f.episode || 0, files: [] });
+    map.get(k).files.push(f);
+  }
+  return [...map.values()].sort((a, b) => a.s - b.s || a.e - b.e);
+}
+
+function playEp(eps, i, back) {
+  const f = eps[i].files.slice().sort((a, b) => b.size - a.size)[0];
+  play(f, back, eps[i + 1] ? () => playEp(eps, i + 1, back) : null);
+}
+
+function seriesDetail(g, back, season) {
+  const v = g.v;
+  const eps = episodes(g);
+  const seasons = [...new Set(eps.map((e) => e.s))];
+  const open = eps.find((e) => e.files.some((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]));
+  const cur = season !== undefined ? season : open ? open.s : seasons[0];
+  const again = () => seriesDetail(g, back, cur);
+  const shown = eps.filter((e) => e.s === cur);
+  view(`<div class="hero" ${v.backdrop ? `style="background-image:linear-gradient(#0000,#010314),url(${tmdb.img(v.backdrop, "w780")})"` : ""}>
+      <button id="b" class="ico">Back</button></div>
+    <div class="info"><h1>${esc(title(v))}</h1>
+      <p class="muted nopad">${[year(v), v.runtime ? v.runtime + " min" : "", v.rating ? "★ " + v.rating.toFixed(1) : "", eps.length + " episodes"].filter(Boolean).join(" · ")}</p>
+      ${v.genres ? `<p class="muted nopad">${esc(v.genres)}</p>` : ""}
+      <button id="p" class="btn">${open ? "Resume" : "Play"}</button>
+      <div class="acts"><button id="wl" class="ghost">${ud.wl[g.key] ? "In watchlist" : "Add to watchlist"}</button><button id="fv" class="ghost">${ud.fav[g.key] ? "Favorite ♥" : "Favorite ♡"}</button></div>
+      ${v.overview ? `<p>${esc(v.overview)}</p>` : ""}
+      <div class="chips">${seasons.map((s) => `<button class="chip ${s === cur ? "on" : ""}" data-s="${s}">${s ? "Season " + s : "Episodes"}</button>`).join("")}</div>
+      <h3>Episodes</h3>${shown.map((e) => `<button class="file" data-i="${eps.indexOf(e)}"><span>${e.e ? "E" + e.e : "Episode"}${e.files.every((f) => ud.seen[f.id]) ? " ✓" : ""}</span><small>${esc(tags(e.files[0].name).join(" · "))} · ${gb(e.files[0].size)}</small></button>`).join("")}
+      ${v.cast && v.cast.length ? `<h3>Cast & crew</h3><div class="chips">${v.cast.map((c) => `<button class="chip" data-p="${esc(c.n)}">${esc(c.n)}${c.c ? `<small>${esc(c.c)}</small>` : ""}</button>`).join("")}</div>` : ""}</div>`);
+  document.getElementById("b").onclick = back;
+  document.getElementById("p").onclick = () => playEp(eps, Math.max(0, eps.indexOf(open || shown[0] || eps[0])), again);
+  document.getElementById("wl").onclick = () => { ud.wl[g.key] = !ud.wl[g.key]; saveUd(); again(); };
+  document.getElementById("fv").onclick = () => { ud.fav[g.key] = !ud.fav[g.key]; saveUd(); again(); };
+  document.querySelectorAll(".chip[data-s]").forEach((b) => (b.onclick = () => seriesDetail(g, back, Number(b.dataset.s))));
+  document.querySelectorAll(".chip[data-p]").forEach((b) => (b.onclick = () => person(b.dataset.p, again)));
+  document.querySelectorAll(".file").forEach((b) => (b.onclick = () => playEp(eps, Number(b.dataset.i), again)));
 }
 
 function person(name, back) {
@@ -244,12 +292,14 @@ async function rescan() {
   const s = document.getElementById("status");
   if (s) s.textContent = "Scanning your Telegram chats…";
   try {
-    const found = await tg.scan((n) => { const e = document.getElementById("status"); if (e) e.textContent = "Scanning… " + n + " found"; });
+    const res = await tg.scan((n, d, t) => { const e = document.getElementById("status"); if (e) e.textContent = "Scanning chat " + d + " of " + t + " · " + n + " found"; });
     const old = new Map(library.map((m) => [m.id, m]));
-    library = found.map((m) => old.get(m.id) || m);
+    library = res.items.map((m) => old.get(m.id) || m);
     localStorage.setItem(LIB, JSON.stringify(library));
-  } catch (e) {}
+    scanNote = res.items.length ? "" : "Checked " + res.chats + " chats and found no movies" + (res.errors ? " (" + res.errors + " chats could not be read)." : ".");
+  } catch (e) { scanNote = "Scan failed: " + (e.message || e); }
   home();
+  const sn = document.getElementById("status"); if (sn) sn.textContent = scanNote;
   enrichAll();
 }
 
@@ -260,12 +310,12 @@ async function enrichAll() {
   if (document.getElementById("status")) home();
 }
 
-function play(m, back) {
+function play(m, back, next) {
   const g = groups().find((x) => x.files.some((f) => f.id === m.id));
   player.play({
     m, label: esc(g ? title(g.v) : m.title), settings, pos, view, back,
     save: () => { save(); localStorage.setItem(POS, JSON.stringify(pos)); },
-    onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); }
+    next, onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); }
   });
 }
 
@@ -284,6 +334,8 @@ function settingsView() {
       ${sw("h", "Hide movies without details", settings.hide)}
       <button id="clr" class="btn ghost">Clear watch history</button>
       <button id="rst" class="btn ghost">Clear library and rescan</button>
+      <h3 class="sec">Privacy</h3>
+      ${sw("st", "Share anonymous usage statistics", settings.stats)}
       <h3 class="sec">Account</h3>
       <p class="muted nopad">Signed in as ${esc(rc.email())}</p>
       <button id="out" class="btn ghost">Sign out</button>
@@ -297,7 +349,7 @@ function settingsView() {
   const $ = (id) => document.getElementById(id);
   const flag = (id, key) => { $(id).onchange = (e) => { settings[key] = e.target.checked; save(); }; };
   const num = (id, key) => { $(id).onchange = (e) => { settings[key] = Number(e.target.value); save(); }; };
-  flag("r", "resume"); flag("gs", "gestures"); flag("sb", "subBg"); flag("h", "hide"); num("k", "skip"); num("ss", "subSize");
+  flag("r", "resume"); flag("gs", "gestures"); flag("sb", "subBg"); flag("h", "hide"); flag("st", "stats"); num("k", "skip"); num("ss", "subSize");
   $("b").onclick = () => home();
   $("clr").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("clr").textContent = "History cleared"; };
   $("rst").onclick = () => { library = []; localStorage.setItem(LIB, "[]"); home(); rescan(); };
