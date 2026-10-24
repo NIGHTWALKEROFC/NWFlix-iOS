@@ -5,6 +5,10 @@ import * as player from "./player.js";
 import * as legal from "./legal.js";
 
 const root = document.getElementById("app");
+setTimeout(() => {
+  const s = document.getElementById("splash");
+  if (s) { s.classList.add("out"); setTimeout(() => s.remove(), 600); }
+}, 1600);
 const LIB = "nwios_lib";
 const POS = "nwios_pos";
 const SET = "nwios_set";
@@ -29,6 +33,22 @@ function view(html) { root.innerHTML = html; }
 
 function ask(kind, text) {
   if (kind === "error") { const e = document.getElementById("err"); if (e) e.textContent = text; return; }
+  if (kind === "code") {
+    view(`<div class="login"><img src="icon.png" width="96" height="96" alt=""><h1>Enter the code</h1><p class="muted">We sent it to your Telegram app</p>
+      <div class="otp"><div class="boxes">${"<i></i>".repeat(5)}</div><input id="v" type="tel" inputmode="numeric" autocomplete="one-time-code" maxlength="5"></div>
+      <p id="err" class="bad"></p></div>`);
+    const input = document.getElementById("v");
+    const boxes = [...document.querySelectorAll(".boxes i")];
+    input.focus();
+    return new Promise((res) => {
+      input.oninput = () => {
+        const v = input.value.replace(/\D/g, "");
+        input.value = v;
+        boxes.forEach((b, i) => { b.textContent = v[i] || ""; b.className = i === v.length ? "cur" : v[i] ? "fill" : ""; });
+        if (v.length === 5) res(v);
+      };
+    });
+  }
   const labels = { phone: ["Phone number", "+91 98765 43210", "tel"], code: ["Code from Telegram", "12345", "tel"], password: ["Two-step password", "Password", "password"] };
   const [title, hint, type] = labels[kind];
   view(`<div class="login"><img src="icon.png" width="72" height="72" alt=""><h1>NWFlix iOS</h1>
