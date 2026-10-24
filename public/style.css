@@ -138,3 +138,59 @@ input[type=range], input[type=checkbox] { accent-color: var(--acc); }
 .login img { border-radius: 18px; }
 .login h1 { letter-spacing: -.8px; margin: 4px 0; }
 .list label { padding: 16px 0; }
+
+@keyframes pop { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+html, body { font-size: 17px; background: radial-gradient(900px 420px at 50% -120px, #2E2A4C88, transparent), #010314; background-attachment: fixed; }
+.login { gap: 16px; }
+.login img { width: 96px; height: 96px; }
+.login h1 { font-size: 32px; }
+.login input { max-width: 360px; height: 56px; font-size: 19px; border-radius: 16px; }
+.btn { max-width: 360px; padding: 17px 28px; font-size: 17px; }
+.otp { position: relative; width: 100%; max-width: 360px; }
+.boxes { display: flex; gap: 10px; justify-content: center; }
+.boxes i { flex: 1; height: 64px; border: 1.5px solid var(--line); border-radius: 16px; background: var(--card); font: 600 28px/64px -apple-system, system-ui, sans-serif; font-style: normal; text-align: center; transition: border-color .15s, transform .15s; }
+.boxes i.fill { border-color: #6633EE; transform: scale(1.04); }
+.boxes i.cur { border-color: var(--acc); box-shadow: 0 0 0 3px #B88CFF33; }
+.otp input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 28px; }
+.bar { padding: 16px 18px; }
+.brand { font-size: 21px; }
+.brand img { width: 36px; height: 36px; border-radius: 10px; }
+.ico { padding: 10px 16px; font-size: 15px; }
+.search { padding: 0 18px 10px; }
+.search input { height: 52px; font-size: 16px; }
+.filters { padding: 0 18px 14px; }
+.filters select { font-size: 15px; padding: 10px 16px; }
+.muted { font-size: 15px; }
+.sec { font-size: 21px; margin: 18px 18px 10px; }
+.row { padding: 0 18px 10px; gap: 14px; }
+.row .card { width: 150px; }
+.grid { grid-template-columns: repeat(2, 1fr); gap: 20px 14px; padding: 8px 18px 100px; }
+@media (min-width: 600px) { .grid { grid-template-columns: repeat(4, 1fr); } .row .card { width: 170px; } }
+.card { animation: pop .45s both; }
+.card:nth-child(2) { animation-delay: .05s; } .card:nth-child(3) { animation-delay: .1s; } .card:nth-child(4) { animation-delay: .15s; } .card:nth-child(n+5) { animation-delay: .2s; }
+.poster { border-radius: 20px; }
+.t { font-size: 15px; margin-top: 4px; }
+.s { font-size: 13px; }
+.rate { font-size: 12px; padding: 3px 8px; top: 8px; left: 8px; }
+.tabs button { font-size: 12px; padding: 12px 0 10px; }
+.tabs svg { width: 26px; height: 26px; }
+.hero { height: 300px; }
+.hero .ico { margin-top: 8px; }
+.info { padding: 0 18px 60px; }
+.info h1 { font-size: 28px; }
+.info.hasp > h1, .info.hasp > .muted { margin-left: 138px; }
+.pimg { width: 120px; top: -74px; left: 18px; border-radius: 16px; }
+.info.hasp .btn { margin-top: 56px; }
+.info .btn { max-width: none; padding: 17px; font-size: 18px; }
+.acts .ghost { font-size: 14px; padding: 13px 8px; }
+.info p { font-size: 16px; line-height: 1.55; }
+.file { padding: 18px; font-size: 16px; margin-bottom: 10px; }
+.chip { padding: 10px 16px; font-size: 15px; }
+.list { padding: 8px 18px 40px; }
+.list label, .link { padding: 18px 0; font-size: 17px; }
+.list select { font-size: 16px; padding: 8px 12px; }
+.doc { padding: 8px 20px 50px; }
+.doc p { font-size: 16px; line-height: 1.6; }
+.big { width: 72px; height: 72px; font-size: 20px; }
+.pbot { font-size: 14px; }
+.pmenu { font-size: 16px; }
