@@ -3,7 +3,17 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "dev": "vite", "build": "vite build" },
-  "dependencies": { "big-integer": "^1.6.52", "telegram": "^2.26.0" },
-  "devDependencies": { "vite": "^5.4.0", "vite-plugin-node-polyfills": "^0.22.0" }
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "big-integer": "^1.6.52",
+    "telegram": "^2.26.0",
+    "firebase": "^10.12.2"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "vite-plugin-node-polyfills": "^0.22.0"
+  }
 }
