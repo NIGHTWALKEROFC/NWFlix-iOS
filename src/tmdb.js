@@ -1,3 +1,5 @@
+import { titleVariants } from "./parse.js";
+
 const KEY = import.meta.env.VITE_TMDB_API_KEY || "";
 const BASE = "https://api.themoviedb.org/3";
 let nextAt = 0;
@@ -59,43 +61,39 @@ async function get(path, params = {}, attempt = 0) {
 
 const yearOf = (d) => Number((d || "").slice(0, 4)) || 0;
 
-async function search(title, year) {
+async function search(title, year, kind = "movie") {
   const run = async (y) => {
     const p = { query: title, include_adult: "false" };
-    if (y > 0) p.year = String(y);
-    const j = await get("/search/movie", p);
+    if (y > 0) p[kind === "tv" ? "first_air_date_year" : "year"] = String(y);
+    const j = await get("/search/" + kind, p);
     return (j.results || []).slice(0, 10).map((o) => ({
-      id: o.id, title: o.title || "", original: o.original_title || "", year: yearOf(o.release_date), popularity: o.popularity || 0
+      id: o.id, title: o.title || o.name || "", original: o.original_title || o.original_name || "", year: yearOf(o.release_date || o.first_air_date), popularity: o.popularity || 0
     }));
   };
   const first = await run(year);
   return first.length || !year ? first : run(0);
 }
 
-async function details(id) {
-  const o = await get("/movie/" + id, { append_to_response: "credits" });
-  const crew = ((o.credits && o.credits.crew) || []).filter((c) => c.job === "Director").slice(0, 2).map((c) => ({ n: c.name, c: "Director" }));
+async function details(id, kind = "movie") {
+  const tv = kind === "tv";
+  const o = await get("/" + kind + "/" + id, { append_to_response: "credits" });
+  const crew = tv
+    ? (o.created_by || []).slice(0, 2).map((c) => ({ n: c.name, c: "Creator" }))
+    : ((o.credits && o.credits.crew) || []).filter((c) => c.job === "Director").slice(0, 2).map((c) => ({ n: c.name, c: "Director" }));
   const cast = ((o.credits && o.credits.cast) || []).slice(0, 10).map((c) => ({ n: c.name, c: c.character || "" }));
   return {
-    tmdb: o.id, name: o.title || "", year: yearOf(o.release_date), rating: o.vote_average || 0, overview: o.overview || "",
-    poster: o.poster_path || "", backdrop: o.backdrop_path || "", runtime: o.runtime || 0,
+    tmdb: o.id, series: tv, name: o.title || o.name || "", year: yearOf(o.release_date || o.first_air_date), rating: o.vote_average || 0,
+    overview: o.overview || "", poster: o.poster_path || "", backdrop: o.backdrop_path || "",
+    runtime: tv ? (o.episode_run_time || [])[0] || 0 : o.runtime || 0,
     genres: (o.genres || []).map((g) => g.name).join(", "), cast: crew.concat(cast)
   };
 }
 
-function variants(title) {
-  const w = title.split(" ").filter(Boolean);
-  const out = new Set([title]);
-  if (w.length >= 3) out.add(w.slice(0, -1).join(" "));
-  if (w.length >= 3 && w[0].length <= 6) out.add(w.slice(1).join(" "));
-  if (w.length >= 4) out.add(w.slice(0, -2).join(" "));
-  return [...out].filter((t) => t.length >= 2);
-}
-
 async function matchOne(m) {
-  for (const t of variants(m.title)) {
-    const hit = pickBest(t, m.year, await search(t, m.year)) || (m.year ? pickBest(t, m.year, await search(t, 0)) : null);
-    if (hit) { Object.assign(m, await details(hit.id)); return; }
+  const kind = m.season > 0 ? "tv" : "movie";
+  for (const t of titleVariants(m.title)) {
+    const hit = pickBest(t, m.year, await search(t, m.year, kind)) || (m.year ? pickBest(t, m.year, await search(t, 0, kind)) : null);
+    if (hit) { Object.assign(m, await details(hit.id, kind)); return; }
   }
 }
 
