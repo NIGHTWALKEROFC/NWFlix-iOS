@@ -1,5 +1,6 @@
 import "./style.css";
 import * as tg from "./tg.js";
+import * as rc from "./remote.js";
 
 const root = document.getElementById("app");
 const LIB = "nwios_lib";
@@ -33,7 +34,41 @@ function ask(kind, text) {
   });
 }
 
+async function gate() {
+  if (await rc.ready()) return;
+  view(`<div class="login"><img src="icon.png" width="72" height="72" alt=""><h1>NWFlix iOS</h1><p>Sign in with your email</p>
+    <button id="g" class="btn">Continue with Google</button><p id="err" class="bad"></p></div>`);
+  await new Promise((res) => {
+    document.getElementById("g").onclick = async () => {
+      try { await rc.signInGoogle(); res(); }
+      catch (e) { if (e.message !== "Cancelled") document.getElementById("err").textContent = e.message; }
+    };
+  });
+}
+
+function applyRemote(c) {
+  let box = document.getElementById("remote");
+  if (!box) { box = document.createElement("div"); box.id = "remote"; document.body.appendChild(box); }
+  if (c.maintenanceOn) {
+    box.className = "cover";
+    box.innerHTML = `<h1>${esc(c.maintenanceTitle || "We'll be right back")}</h1><p class="muted">${esc(c.maintenanceMessage || "NWFlix is being updated. Please try again in a little while.")}</p>`;
+    return;
+  }
+  const live = c.annId && localStorage.getItem("nwios_ann") !== c.annId && (!c.annExpiresAt || Date.now() < c.annExpiresAt);
+  if (!live) { box.className = ""; box.innerHTML = ""; return; }
+  const link = c.annButtonText && c.annButtonUrl.startsWith("https://");
+  box.className = "cover dim";
+  box.innerHTML = `<div class="dialog"><h2>${esc(c.annTitle || "NWFlix")}</h2><p>${esc(c.annMessage)}</p>
+    ${link ? `<a id="ab" class="btn" href="${esc(c.annButtonUrl)}" target="_blank" rel="noopener">${esc(c.annButtonText)}</a>` : ""}
+    ${c.annDismissible || !link ? `<button id="ac" class="btn ghost">${link ? "Later" : "OK"}</button>` : ""}</div>`;
+  const close = () => { localStorage.setItem("nwios_ann", c.annId); applyRemote(Object.assign({}, c, { annId: "" })); };
+  const ac = document.getElementById("ac"); if (ac) ac.onclick = close;
+  const ab = document.getElementById("ab"); if (ab) ab.onclick = () => setTimeout(close, 300);
+}
+
 async function boot() {
+  await gate();
+  rc.watchConfig(applyRemote);
   if (!tg.hasKeys()) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">Telegram keys are missing in this build.</p></div>'); return; }
   view('<div class="login"><div class="spin"></div></div>');
   if (!("serviceWorker" in navigator)) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">This browser cannot stream. Update iOS and open this page in Safari.</p></div>'); return; }
@@ -101,13 +136,14 @@ function settingsView() {
       <label>Skip buttons (seconds)<select id="k">${[5, 10, 15, 30].map((n) => `<option ${n === settings.skip ? "selected" : ""}>${n}</option>`).join("")}</select></label>
       <button id="clr" class="btn ghost">Clear watch history</button>
       <button id="out" class="btn ghost">Sign out</button>
+      <p class="muted center">Signed in as ${esc(rc.email())}</p>
       <p class="muted center">NWFlix iOS 1.0 · Made by Mohammed Rinshan (NIGHTWALKER)</p>
     </div>`);
   document.getElementById("b").onclick = () => home();
   document.getElementById("r").onchange = (e) => { settings.resume = e.target.checked; save(); };
   document.getElementById("k").onchange = (e) => { settings.skip = Number(e.target.value); save(); };
   document.getElementById("clr").onclick = () => { pos = {}; localStorage.setItem(POS, "{}"); };
-  document.getElementById("out").onclick = () => tg.logout();
+  document.getElementById("out").onclick = async () => { await rc.logout(); tg.logout(); };
 }
 
 boot();
