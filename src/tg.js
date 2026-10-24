@@ -1,12 +1,12 @@
 import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions";
 import bigInt from "big-integer";
+import { looksLikeMovie, parse } from "./parse.js";
 
 const API_ID = Number(import.meta.env.VITE_TG_API_ID || 0);
 const API_HASH = import.meta.env.VITE_TG_API_HASH || "";
 const SESSION_KEY = "nwios_session";
 const CHUNK = 512 * 1024;
-const VIDEO_EXT = ["mkv", "mp4", "avi", "mov", "webm", "m4v", "ts", "wmv", "flv", "mpg", "mpeg", "3gp"];
 const cache = new Map();
 
 export let client = null;
@@ -63,57 +63,45 @@ export function friendly(m) {
   return m || "Something went wrong talking to Telegram.";
 }
 
-const ext = (n) => (n.includes(".") ? n.split(".").pop().toLowerCase() : "");
-
-function looksLikeMovie(r) {
-  if (!(VIDEO_EXT.includes(ext(r.name)) || r.mime.startsWith("video/"))) return false;
-  const mb = 1024 * 1024;
-  if (r.dur > 0) return r.dur >= 40 * 60 || r.size >= 700 * mb;
-  return r.size >= 350 * mb;
-}
-
-function parse(name) {
-  let t = name.replace(/\.[a-z0-9]{2,4}$/i, "").replace(/^\s*(\[[^\]]*\]|\{[^}]*\}|@\w+)[\s._-]*/, "");
-  t = t.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
-  const y = /(?<![0-9])(19[2-9]\d|20[0-4]\d)(?![0-9])/.exec(t);
-  const junk = /\b(2160p|1080p|720p|576p|480p|4k|uhd|bluray|brrip|bdrip|webrip|web-dl|hdrip|hdtv|dvdrip|x264|x265|h264|h265|hevc|10bit|aac|ac3|dts|hindi|tamil|telugu|malayalam|english|dubbed|esubs?|hdcam|camrip)\b.*/i;
-  const title = y && y.index > 0 ? t.slice(0, y.index) : t.replace(junk, "");
-  return { title: title.replace(/[-(\[\s]+$/, "").trim() || name, year: y ? Number(y[1]) : 0 };
-}
-
-export async function scan(onFound) {
-  const dialogs = await client.getDialogs({ limit: 300 });
+export async function scan(onProgress) {
+  const dialogs = (await client.getDialogs({ limit: 500 })).filter((d) => d.entity);
   const out = [];
   const seen = new Set();
-  for (const d of dialogs) {
-    for (const F of [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument]) {
-      try {
-        const msgs = await client.getMessages(d.entity, { limit: 100, filter: new F() });
-        for (const m of msgs) {
-          if (!m.document || !m.file) continue;
-          const r = {
-            id: d.id.toString() + "_" + m.id,
-            chat: d.id.toString(),
-            msg: m.id,
-            name: m.file.name || "",
-            size: Number(m.file.size || 0),
-            dur: Number(m.file.duration || 0),
-            mime: m.file.mimeType || "video/mp4",
-            at: (m.date || 0) * 1000
-          };
-          if (!looksLikeMovie(r)) continue;
-          const dup = r.size + "|" + r.dur;
-          if (seen.has(dup)) continue;
-          seen.add(dup);
-          Object.assign(r, parse(r.name));
-          out.push(r);
-        }
-      } catch (e) {}
+  let next = 0, done = 0, errors = 0;
+  const worker = async () => {
+    while (next < dialogs.length) {
+      const d = dialogs[next++];
+      for (const F of [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument]) {
+        try {
+          for await (const m of client.iterMessages(d.entity, { filter: new F(), limit: 2000 })) {
+            if (!m.document || !m.file) continue;
+            const r = {
+              id: d.id.toString() + "_" + m.id,
+              chat: d.id.toString(),
+              msg: m.id,
+              name: m.file.name || "",
+              size: Number(m.file.size || 0),
+              dur: Number(m.file.duration || 0),
+              mime: m.file.mimeType || "video/mp4",
+              at: (m.date || 0) * 1000
+            };
+            if (!looksLikeMovie(r)) continue;
+            const dup = r.size + "|" + r.dur + "|" + r.name;
+            if (seen.has(dup)) continue;
+            const p = parse(r.name, m.message || "");
+            if (!p) continue;
+            seen.add(dup);
+            out.push(Object.assign(r, p));
+          }
+        } catch (e) { errors++; }
+      }
+      done++;
+      onProgress(out.length, done, dialogs.length);
     }
-    onFound(out.length);
-  }
+  };
+  await Promise.all([worker(), worker(), worker()]);
   out.sort((a, b) => b.at - a.at);
-  return out;
+  return { items: out, errors, chats: dialogs.length };
 }
 
 async function message(item) {
