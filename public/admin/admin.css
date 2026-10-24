@@ -1,0 +1,18 @@
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: #08090a; color: #f2f3f5; font: 16px/1.4 -apple-system, system-ui, sans-serif; }
+.box { max-width: 520px; margin: 0 auto 16px; background: #15171a; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 17px; margin: 0; }
+header { max-width: 520px; margin: 0 auto 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+header span { flex: 1; color: #8b9097; font-size: 13px; }
+input, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #2a2d33; background: #0d0e10; color: inherit; font: inherit; }
+button { padding: 12px 16px; border: 0; border-radius: 10px; background: #e50914; color: #fff; font: inherit; font-weight: 600; }
+button.ghost { background: #2a2d33; }
+.row { display: flex; align-items: center; gap: 8px; }
+.row input { width: auto; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.note { margin: 0; color: #8b9097; font-size: 14px; }
+.msg { margin: 0; min-height: 1.2em; font-size: 14px; }
+.ok { color: #5fd38d; }
+.bad { color: #ff6b6b; }
+.hidden { display: none; }
