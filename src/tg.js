@@ -1,7 +1,7 @@
 import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions";
 import bigInt from "big-integer";
-import { looksLikeMovie, parse } from "./parse.js";
+import { looksLikeMovie, parse, learnHandles } from "./parse.js";
 
 const API_ID = Number(import.meta.env.VITE_TG_API_ID || 0);
 const API_HASH = import.meta.env.VITE_TG_API_HASH || "";
@@ -64,8 +64,12 @@ export function friendly(m) {
 }
 
 export async function scan(onProgress) {
-  const dialogs = (await client.getDialogs({ limit: 500 })).filter((d) => d.entity);
+  const main = await client.getDialogs({ limit: 500 });
+  let archived = [];
+  try { archived = await client.getDialogs({ limit: 300, folder: 1 }); } catch (e) {}
+  const dialogs = main.concat(archived).filter((d, i, a) => d.entity && a.findIndex((x) => x.id.toString() === d.id.toString()) === i);
   const out = [];
+  const raws = [];
   const seen = new Set();
   let done = 0, errors = 0, docs = 0, passed = 0, firstErr = "";
 
@@ -86,10 +90,9 @@ export async function scan(onProgress) {
     passed++;
     const dup = r.id;
     if (seen.has(dup)) return;
-    const p = parse(r.name, m.message || "");
-    if (!p) return;
     seen.add(dup);
-    out.push(Object.assign(r, p));
+    r.cap = m.message || "";
+    raws.push(r);
   };
 
   const run = async (list, filters, limit) => {
@@ -105,7 +108,7 @@ export async function scan(onProgress) {
           } catch (e) { errors++; firstErr = firstErr || String((e && e.message) || e); }
         }
         done++;
-        onProgress(out.length, done, list.length);
+        onProgress(raws.length, done, list.length);
       }
     };
     await Promise.all([worker(), worker(), worker()]);
@@ -113,6 +116,11 @@ export async function scan(onProgress) {
 
   await run(dialogs, [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument], 2000);
   if (!docs) await run(dialogs.slice(0, 100), [null], 300);
+  learnHandles(raws.map((r) => r.name));
+  for (const r of raws) {
+    const p = parse(r.name, r.cap);
+    if (p) out.push(Object.assign(r, p));
+  }
   out.sort((a, b) => b.at - a.at);
   return { items: out, errors, firstErr, chats: dialogs.length, docs, passed };
 }
