@@ -49,7 +49,7 @@ export async function login(ask) {
 export async function logout() {
   try { await client.invoke(new Api.auth.LogOut()); } catch (e) {}
   localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem("nwios_lib");
+  ["nwios_lib", "nwios_user", "nwios_pos", "nwios_fs"].forEach((k) => localStorage.removeItem(k));
   location.reload();
 }
 
@@ -67,41 +67,54 @@ export async function scan(onProgress) {
   const dialogs = (await client.getDialogs({ limit: 500 })).filter((d) => d.entity);
   const out = [];
   const seen = new Set();
-  let next = 0, done = 0, errors = 0;
-  const worker = async () => {
-    while (next < dialogs.length) {
-      const d = dialogs[next++];
-      for (const F of [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument]) {
-        try {
-          for await (const m of client.iterMessages(d.entity, { filter: new F(), limit: 2000 })) {
-            if (!m.document || !m.file) continue;
-            const r = {
-              id: d.id.toString() + "_" + m.id,
-              chat: d.id.toString(),
-              msg: m.id,
-              name: m.file.name || "",
-              size: Number(m.file.size || 0),
-              dur: Number(m.file.duration || 0),
-              mime: m.file.mimeType || "video/mp4",
-              at: (m.date || 0) * 1000
-            };
-            if (!looksLikeMovie(r)) continue;
-            const dup = r.size + "|" + r.dur + "|" + r.name;
-            if (seen.has(dup)) continue;
-            const p = parse(r.name, m.message || "");
-            if (!p) continue;
-            seen.add(dup);
-            out.push(Object.assign(r, p));
-          }
-        } catch (e) { errors++; }
-      }
-      done++;
-      onProgress(out.length, done, dialogs.length);
-    }
+  let done = 0, errors = 0, docs = 0, passed = 0, firstErr = "";
+
+  const take = (d, m) => {
+    if (!m.document || !m.file) return;
+    docs++;
+    const r = {
+      id: d.id.toString() + "_" + m.id,
+      chat: d.id.toString(),
+      msg: m.id,
+      name: m.file.name || "",
+      size: Number(m.file.size || 0),
+      dur: Number(m.file.duration || 0),
+      mime: m.file.mimeType || "video/mp4",
+      at: (m.date || 0) * 1000
+    };
+    if (!looksLikeMovie(r)) return;
+    passed++;
+    const dup = r.id;
+    if (seen.has(dup)) return;
+    const p = parse(r.name, m.message || "");
+    if (!p) return;
+    seen.add(dup);
+    out.push(Object.assign(r, p));
   };
-  await Promise.all([worker(), worker(), worker()]);
+
+  const run = async (list, filters, limit) => {
+    let next = 0;
+    done = 0;
+    const worker = async () => {
+      while (next < list.length) {
+        const d = list[next++];
+        for (const F of filters) {
+          try {
+            const opt = F ? { filter: new F(), limit } : { limit };
+            for await (const m of client.iterMessages(d.entity, opt)) take(d, m);
+          } catch (e) { errors++; firstErr = firstErr || String((e && e.message) || e); }
+        }
+        done++;
+        onProgress(out.length, done, list.length);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+  };
+
+  await run(dialogs, [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument], 2000);
+  if (!docs) await run(dialogs.slice(0, 100), [null], 300);
   out.sort((a, b) => b.at - a.at);
-  return { items: out, errors, chats: dialogs.length };
+  return { items: out, errors, firstErr, chats: dialogs.length, docs, passed };
 }
 
 async function message(item) {
