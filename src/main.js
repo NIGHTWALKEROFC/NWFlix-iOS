@@ -3,6 +3,7 @@ import * as rc from "./remote.js";
 import * as tmdb from "./tmdb.js";
 import * as player from "./player.js";
 import * as legal from "./legal.js";
+import * as guides from "./guides.js";
 
 const root = document.getElementById("app");
 setTimeout(() => {
@@ -36,7 +37,8 @@ function ask(kind, text) {
   if (kind === "code") {
     view(`<div class="login"><img src="icon.png" width="96" height="96" alt=""><h1>Enter the code</h1><p class="muted">We sent it to your Telegram app</p>
       <div class="otp"><div class="boxes">${"<i></i>".repeat(5)}</div><input id="v" type="tel" inputmode="numeric" autocomplete="one-time-code" maxlength="5"></div>
-      <p id="err" class="bad"></p></div>`);
+      <p id="err" class="bad"></p><button id="gd" class="linkbtn">Where do I find the code?</button></div>`);
+    document.getElementById("gd").onclick = () => guides.openGuide("otp");
     const input = document.getElementById("v");
     const boxes = [...document.querySelectorAll(".boxes i")];
     input.focus();
@@ -62,6 +64,25 @@ function ask(kind, text) {
     document.getElementById("go").onclick = done;
     input.onkeydown = (e) => { if (e.key === "Enter") done(); };
   });
+}
+
+let installEvt = null;
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; });
+
+function a2hs(force) {
+  if (!force && (matchMedia("(display-mode: standalone)").matches || navigator.standalone)) return;
+  if (!force) localStorage.setItem("nwios_a2hs", "1");
+  const b = document.createElement("div");
+  b.className = "cover dim";
+  b.style.zIndex = 70;
+  b.innerHTML = `<div class="dialog"><img src="icon.png" width="64" height="64" alt="" style="border-radius:16px;align-self:center">
+    <h2>Add NWFlix iOS to your Home Screen</h2><p>Open it like a real app: full screen, with no browser bar.</p>
+    ${installEvt ? '<button id="ai" class="btn">Install</button>' : '<ol class="steps"><li>Tap the <b>Share</b> button in your browser <svg class="shr" viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 00-1 1v8a1 1 0 001 1h14a1 1 0 001-1v-8a1 1 0 00-1-1h-1"/></svg></li><li>Scroll down and tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b></li></ol>'}
+    <button id="ao" class="btn ghost">${installEvt ? "Not now" : "Got it"}</button></div>`;
+  document.body.appendChild(b);
+  document.getElementById("ao").onclick = () => b.remove();
+  const ai = document.getElementById("ai");
+  if (ai) ai.onclick = async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; b.remove(); };
 }
 
 async function gate() {
@@ -111,6 +132,7 @@ async function boot() {
     try { await tg.login(ask); ok = true; } catch (e) { view(`<div class="login"><p class="bad">${esc(tg.friendly(e.message || ""))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`); return; }
   }
   await tg.startStreaming(() => library);
+  if (!localStorage.getItem("nwios_a2hs")) setTimeout(() => a2hs(false), 1800);
   home();
   if (!library.length) rescan(); else enrichAll();
 }
@@ -118,7 +140,7 @@ async function boot() {
 const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.getItem("nwios_user") || "{}"));
 const saveUd = () => localStorage.setItem("nwios_user", JSON.stringify(ud));
 let scanNote = "";
-let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "";
+let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "";
 
 const ICONS = {
   all: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/></svg>',
@@ -179,7 +201,8 @@ function home(q = "") {
     (!ql || (title(g.v) + " " + (g.v.cast || []).map((c) => c.n).join(" ") + " " + g.files.map((f) => f.name).join(" ")).toLowerCase().includes(ql)) &&
     (!fGenre || (g.v.genres || "").includes(fGenre)) &&
     (!fLang || g.files.some((f) => tags(f.name).includes(fLang))) &&
-    (!fQual || g.files.some((f) => tags(f.name).includes(fQual)))
+    (!fQual || g.files.some((f) => tags(f.name).includes(fQual))) &&
+    (!fType || (fType === "Series") === isSeries(g))
   ).sort(SORTS[sortBy]);
   const genres = [...new Set(all.flatMap((g) => (g.v.genres || "").split(", ").filter(Boolean)))].sort();
   const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((t) => !QUALITIES.includes(t) && t !== "HEVC").sort();
@@ -189,7 +212,7 @@ function home(q = "") {
     <div class="search"><input id="q" type="search" placeholder="Search movies or cast" value="${esc(q)}"></div>
     <div class="filters">
       <select id="so">${Object.entries(SORT_NAMES).map(([k, n]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${n}</option>`).join("")}</select>
-      ${select("fg", "Genre", genres, fGenre)}${select("fl", "Language", langs, fLang)}${select("fq", "Quality", QUALITIES, fQual)}
+      ${select("fg", "Genre", genres, fGenre)}${select("fl", "Language", langs, fLang)}${select("fq", "Quality", QUALITIES, fQual)}${select("ft", "Type", ["Movies", "Series"], fType)}
     </div>
     <p id="status" class="muted">${esc(scanNote)}</p>
     ${hiddenN ? `<p class="muted">${hiddenN} files without details are hidden. <button id="showall" class="linkbtn">Show them</button></p>` : ""}
@@ -207,6 +230,7 @@ function home(q = "") {
   document.getElementById("fg").onchange = (e) => { fGenre = e.target.value; home(q); };
   document.getElementById("fl").onchange = (e) => { fLang = e.target.value; home(q); };
   document.getElementById("fq").onchange = (e) => { fQual = e.target.value; home(q); };
+  document.getElementById("ft").onchange = (e) => { fType = e.target.value; home(q); };
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => { tab = b.dataset.t; home(); }));
   document.querySelectorAll(".card").forEach((c) => (c.onclick = () => detail(byKey(c.dataset.k), () => home(q))));
 }
@@ -370,6 +394,10 @@ function settingsView() {
       <h3 class="sec">Account</h3>
       <p class="muted nopad">Signed in as ${esc(rc.email())}</p>
       <button id="out" class="btn ghost">Sign out</button>
+      <h3 class="sec">Help</h3>
+      ${row("h-otp", "Where to find the login code", "Step by step, English and മലയാളം")}
+      ${row("h-mov", "How to get movies in NWFlix", "Step by step, English and മലയാളം")}
+      ${row("h-a2", "Add to Home Screen", "Open NWFlix like a real app")}
       <h3 class="sec">Legal</h3>
       ${row("l-privacy", "Privacy Policy", "How your information is used")}
       ${row("l-terms", "Terms & Conditions", "Rules for using the app")}
@@ -387,6 +415,9 @@ function settingsView() {
   $("out").onclick = async () => { await rc.logout(); tg.logout(); };
   ["privacy", "terms", "disclaimer"].forEach((k) => ($("l-" + k).onclick = () => legalView(k)));
   $("l-about").onclick = aboutView;
+  $("h-otp").onclick = () => guides.openGuide("otp");
+  $("h-mov").onclick = () => guides.openGuide("movies");
+  $("h-a2").onclick = () => a2hs(true);
 }
 
 function legalView(k) {
