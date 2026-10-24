@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>NWFlix iOS admin</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <section id="login" class="box">
+    <h1>NWFlix iOS admin</h1>
+    <input id="email" type="email" placeholder="Admin email" autocomplete="username">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="signin">Sign in</button>
+    <p id="login-msg" class="msg bad"></p>
+  </section>
+
+  <section id="app" class="hidden">
+    <header><h1>NWFlix iOS admin</h1><span id="who"></span><button id="signout" class="ghost">Sign out</button></header>
+
+    <div class="box">
+      <h2>Maintenance</h2>
+      <label class="row"><input id="m-on" type="checkbox"> Block the web app</label>
+      <input id="m-title" placeholder="Title">
+      <textarea id="m-msg" rows="3" placeholder="Message"></textarea>
+      <button id="m-save">Save</button>
+      <p id="m-out" class="msg"></p>
+    </div>
+
+    <div class="box">
+      <h2>Message to users</h2>
+      <p id="a-current" class="note"></p>
+      <input id="a-title" placeholder="Title">
+      <textarea id="a-msg" rows="4" placeholder="Message"></textarea>
+      <input id="a-btn" placeholder="Button text (optional)">
+      <input id="a-url" placeholder="Button link, https:// (optional)">
+      <input id="a-exp" type="number" min="0" placeholder="Hide after this many hours (empty = never)">
+      <label class="row"><input id="a-dismiss" type="checkbox" checked> Users can close it</label>
+      <div class="two"><button id="a-send">Send</button><button id="a-clear" class="ghost">Remove</button></div>
+      <p id="a-out" class="msg"></p>
+    </div>
+  </section>
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
