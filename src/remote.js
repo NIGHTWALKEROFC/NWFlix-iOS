@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { initializeFirestore, doc, onSnapshot } from "firebase/firestore";
+import { initializeFirestore, doc, onSnapshot, setDoc, serverTimestamp, increment } from "firebase/firestore";
 
 const app = initializeApp({
   apiKey: "AIzaSyB1k7Js9TtR-NHriFYAC3EfAnxN-uPPUFc",
@@ -37,8 +37,25 @@ export function watchConfig(cb) {
     cb({
       maintenanceOn: !!d.maintenanceOn, maintenanceTitle: d.maintenanceTitle || "", maintenanceMessage: d.maintenanceMessage || "",
       annId: d.annId || "", annTitle: d.annTitle || "", annMessage: d.annMessage || "",
-      annButtonText: d.annButtonText || "", annButtonUrl: d.annButtonUrl || "", annDismissible: d.annDismissible !== false,
+      annButtonText: d.annButtonText || "", annButtonUrl: d.annButtonUrl || "", annDismissible: d.annDismissible !== false, annCountries: d.annCountries || "",
       annExpiresAt: d.annExpiresAt && d.annExpiresAt.toMillis ? d.annExpiresAt.toMillis() : 0
     });
   }, () => {});
+}
+
+export async function heartbeat() {
+  const u = auth.currentUser;
+  if (!u) return;
+  const ua = navigator.userAgent;
+  const ios = /OS (\d+)[_.]/.exec(ua);
+  const lang = (navigator.language || "en").split("-");
+  const data = {
+    v: "1.0", vc: 1, os: ios ? "iOS " + ios[1] : "iOS web", sdk: ios ? Number(ios[1]) : 0,
+    model: (/CriOS/.test(ua) ? "Chrome" : /FxiOS/.test(ua) ? "Firefox" : "Safari") + " web",
+    country: (lang[1] || "XX").toUpperCase().slice(0, 2), lang: lang[0].slice(0, 3),
+    lastSeen: serverTimestamp(), opens: increment(1)
+  };
+  const first = !localStorage.getItem("nwios_fs");
+  if (first) data.firstSeen = serverTimestamp();
+  try { await setDoc(doc(db, "users", u.uid), data, { merge: true }); localStorage.setItem("nwios_fs", "1"); } catch (e) {}
 }
