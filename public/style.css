@@ -238,3 +238,7 @@ html, body { font-size: 17px; background: radial-gradient(900px 420px at 50% -12
 .pmenu input[type=range] { width: 55%; }
 .srow small { color: var(--mut); }
 .sec.nopad { margin-left: 0; }
+
+#ptr { position: fixed; top: -50px; left: 50%; transform: translate(-50%, 0); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px; font-size: 14px; z-index: 30; pointer-events: none; transition: transform .15s; }
+.toast { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); background: #2A2B3A; border: 1px solid var(--line); border-radius: 999px; padding: 12px 22px; z-index: 80; animation: pop .3s both; }
+.nowifi { width: 72px; height: 72px; fill: none; stroke: var(--mut); stroke-width: 1.6; stroke-linecap: round; }
