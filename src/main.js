@@ -15,10 +15,16 @@ const POS = "nwios_pos";
 const SET = "nwios_set";
 let library = JSON.parse(localStorage.getItem(LIB) || "[]");
 let pos = JSON.parse(localStorage.getItem(POS) || "{}");
-let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true }, JSON.parse(localStorage.getItem(SET) || "{}"));
+let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true, vol: 1, bright: 1, text: 17, accent: "#B88CFF", buffer: 40, saver: false }, JSON.parse(localStorage.getItem(SET) || "{}"));
 let pending = null;
 
 const save = () => localStorage.setItem(SET, JSON.stringify(settings));
+function applyTheme() {
+  document.documentElement.style.setProperty("--acc", settings.accent);
+  document.documentElement.style.fontSize = settings.text + "px";
+  document.body.style.fontSize = settings.text + "px";
+}
+applyTheme();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tags = (n) => {
   const t = n.toLowerCase(), o = [];
@@ -165,6 +171,7 @@ const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.
 const saveUd = () => localStorage.setItem("nwios_user", JSON.stringify(ud));
 let scanNote = "";
 let userName = "";
+const wt = JSON.parse(localStorage.getItem("nwios_time") || "{}");
 let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "";
 
 const ICONS = {
@@ -265,7 +272,7 @@ function detail(g, back) {
   const v = g.v;
   const files = g.files.slice().sort((a, b) => b.size - a.size);
   const resumeFile = files.filter((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]).sort((a, b) => pos[b.id] - pos[a.id])[0];
-  const best = resumeFile || files[0];
+  const best = resumeFile || (settings.saver ? files[files.length - 1] : files[0]);
   const again = () => detail(g, back);
   view(`<div class="hero" ${v.backdrop ? `style="background-image:linear-gradient(#0000,#08090a),url(${tmdb.img(v.backdrop, "w780")})"` : ""}>
       <button id="b" class="ico">Back</button></div>
@@ -304,7 +311,8 @@ function episodes(g) {
 }
 
 function playEp(eps, i, back) {
-  const f = eps[i].files.slice().sort((a, b) => b.size - a.size)[0];
+  const fl = eps[i].files.slice().sort((a, b) => b.size - a.size);
+  const f = settings.saver ? fl[fl.length - 1] : fl[0];
   play(f, back, eps[i + 1] ? () => playEp(eps, i + 1, back) : null);
 }
 
@@ -395,7 +403,8 @@ function play(m, back, next) {
   player.play({
     m, label: esc(g ? title(g.v) : m.title), settings, pos, view, back,
     save: () => { save(); localStorage.setItem(POS, JSON.stringify(pos)); },
-    next, onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); }
+    next, onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); },
+    onWatch: (s) => { const d = new Date().toISOString().slice(0, 10); wt[d] = Math.round((wt[d] || 0) + s); localStorage.setItem("nwios_time", JSON.stringify(wt)); }
   });
 }
 
@@ -409,11 +418,14 @@ const SI = {
   privacy_policy: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
   terms: "M6 3h9l4 4v14H6zM9 12h6M9 16h6",
   disclaimer: "M12 3l10 18H2zM12 10v5M12 18v.5",
-  about: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v6M12 7.5v.5"
+  about: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v6M12 7.5v.5",
+  appearance: "M12 3a9 9 0 100 18c1.5 0 2-1 1.5-2s0-2 1.5-2h2a3 3 0 003-3c0-6-4-11-8-11z",
+  network: "M2 9a15 15 0 0120 0M5 12.5a10 10 0 0114 0M8.5 16a5 5 0 017 0M12 19.5v.5",
+  storage: "M4 7c0-2 3.5-3 8-3s8 1 8 3-3.5 3-8 3-8-1-8-3zM4 7v10c0 2 3.5 3 8 3s8-1 8-3V7"
 };
 const SECTIONS = [
   ["Account", [["account", "Account & Security", "Telegram session, sign out"], ["privacy", "Privacy & Security", "Statistics and your data"]]],
-  ["Preferences", [["player", "Player Settings", "Playback, subtitles, gestures"], ["library", "Library", "Details, history, rescan"]]],
+  ["Preferences", [["appearance", "Appearance", "Accent colour and text size"], ["player", "Player Settings", "Playback, subtitles, gestures"], ["network", "Network & Download", "Buffer and data saver"], ["storage", "Storage & Cache", "Cache and saved details"], ["library", "Library", "Details, history, rescan"]]],
   ["Activity", [["stats", "Watch statistics", "Your movies and lists"]]],
   ["App", [["help", "Help & Support", "Guides and Home Screen"]]],
   ["Legal", [["privacy_policy", "Privacy Policy", "How your information is used"], ["terms", "Terms & Conditions", "Rules for using NWFlix"], ["disclaimer", "Disclaimer & Copyright", "Content and credits"]]],
@@ -446,6 +458,17 @@ function settingsView() {
   }));
 }
 
+function watchTime() {
+  const fmt = (s) => (s >= 3600 ? Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m" : Math.floor(s / 60) + "m");
+  const cell = (n, t) => `<div class="stat"><b>${n}</b><small>${t}</small></div>`;
+  const days = [...Array(7)].map((_, i) => { const d = new Date(Date.now() - (6 - i) * 864e5); return { k: d.toISOString().slice(0, 10), n: "SMTWTFS"[d.getDay()] }; });
+  const vals = days.map((d) => wt[d.k] || 0);
+  const max = Math.max(...vals, 1);
+  const all = Object.values(wt).reduce((a, b) => a + b, 0);
+  return `<h3 class="sec nopad">Watch time</h3><div class="stats">${cell(fmt(vals[6]), "Today")}${cell(fmt(vals.reduce((a, b) => a + b, 0)), "Last 7 days")}${cell(fmt(all), "All time")}</div>
+    <div class="bars">${days.map((d, i) => `<div><i style="height:${Math.round((vals[i] / max) * 100)}%"></i><small>${d.n}</small></div>`).join("")}</div>`;
+}
+
 function settingsPage(k) {
   const back = settingsView;
   if (k === "account") {
@@ -460,7 +483,7 @@ function settingsPage(k) {
     flag("st", "stats");
     $("del").onclick = async () => { await rc.logout(); tg.logout(); };
   } else if (k === "player") {
-    page("Player Settings", `${sw("r", "Resume where I stopped", settings.resume)}${sw("gs", "Swipe to seek, double-tap to skip", settings.gestures)}
+    page("Player Settings", `${sw("r", "Resume where I stopped", settings.resume)}${sw("gs", "Swipe gestures: seek, brightness, volume", settings.gestures)}
       ${sel("k", "Skip buttons (seconds)", [5, 10, 15, 30], settings.skip)}${sel("sp", "Default speed", [0.5, 0.75, 1, 1.25, 1.5, 2], settings.speed)}
       ${sel("ss", "Subtitle size", [16, 20, 24, 28, 34], settings.subSize)}${sw("sb", "Subtitle background", settings.subBg)}`, back);
     flag("r", "resume"); flag("gs", "gestures"); flag("sb", "subBg"); num("k", "skip"); num("sp", "speed"); num("ss", "subSize");
@@ -474,7 +497,23 @@ function settingsPage(k) {
     const gs = groups();
     const cell = (n, t) => `<div class="stat"><b>${n}</b><small>${t}</small></div>`;
     page("Watch statistics", `<div class="stats">${cell(gs.filter((g) => !isSeries(g)).length, "Movies")}${cell(gs.filter(isSeries).length, "Series")}
-      ${cell(gs.filter(watched).length, "Watched")}${cell(gs.filter(started).length, "In progress")}${cell(Object.keys(ud.wl).filter((x) => ud.wl[x]).length, "Watchlist")}${cell(Object.keys(ud.fav).filter((x) => ud.fav[x]).length, "Favorites")}</div>`, back);
+      ${cell(gs.filter(watched).length, "Watched")}${cell(gs.filter(started).length, "In progress")}${cell(Object.keys(ud.wl).filter((x) => ud.wl[x]).length, "Watchlist")}${cell(Object.keys(ud.fav).filter((x) => ud.fav[x]).length, "Favorites")}</div>${watchTime()}`, back);
+  } else if (k === "appearance") {
+    const cols = ["#B88CFF", "#4FC3F7", "#81C784", "#FFB74D", "#F06292"];
+    page("Appearance", `<p class="muted nopad">Accent colour</p><div class="swatches">${cols.map((c) => `<button class="swatch ${c === settings.accent ? "on" : ""}" data-c="${c}" style="background:${c}"></button>`).join("")}</div>${sel("tx", "Text size", [15, 16, 17, 18, 20], settings.text)}`, back);
+    document.querySelectorAll(".swatch").forEach((b) => (b.onclick = () => { settings.accent = b.dataset.c; save(); applyTheme(); settingsPage("appearance"); }));
+    $("tx").onchange = (e) => { settings.text = Number(e.target.value); save(); applyTheme(); };
+  } else if (k === "network") {
+    page("Network & Download", `${sel("bf", "Buffer ahead (seconds)", [20, 40, 90], settings.buffer)}${sw("sv", "Data saver: start with the smallest file", settings.saver)}
+      <p class="muted nopad">NWFlix streams straight from Telegram and never downloads whole movies. A bigger buffer plays smoother on slow networks but uses more data and memory. Use Wi-Fi for HD files.</p>`, back);
+    num("bf", "buffer"); flag("sv", "saver");
+  } else if (k === "storage") {
+    const kb = (key) => Math.round((localStorage.getItem(key) || "").length / 1024) + " KB";
+    page("Storage & Cache", `<div class="sgroup">${[["Library and movie details", LIB], ["Watch progress", POS], ["Lists and watched marks", "nwios_user"], ["Watch time", "nwios_time"]].map(([t, key]) => `<div class="srow"><span class="stx"><b>${t}</b></span><small>${kb(key)}</small></div>`).join("")}</div>
+      <button id="cd" class="btn ghost">Clear saved movie details</button><button id="cl" class="btn ghost">Clear library cache</button><button id="ch" class="btn ghost">Clear watch history</button>`, back);
+    $("cd").onclick = () => { library.forEach((m) => ["tmdb", "series", "name", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x])); localStorage.setItem(LIB, JSON.stringify(library)); home(); enrichAll(); };
+    $("cl").onclick = () => { library = []; localStorage.setItem(LIB, "[]"); home(); rescan(); };
+    $("ch").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("ch").textContent = "History cleared"; };
   } else if (k === "help") {
     page("Help & Support", `<div class="sgroup">
       <button class="srow" id="h1"><span class="stx"><b>Where to find the login code</b><small>English and മലയാളം</small></span><i class="chev">›</i></button>
