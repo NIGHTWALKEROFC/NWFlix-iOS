@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { initializeFirestore, doc, onSnapshot, setDoc, serverTimestamp, increment } from "firebase/firestore";
+import { initializeFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
 
 const app = initializeApp({
   apiKey: "AIzaSyB1k7Js9TtR-NHriFYAC3EfAnxN-uPPUFc",
@@ -58,4 +58,21 @@ export async function heartbeat() {
   const first = !localStorage.getItem("nwios_fs");
   if (first) data.firstSeen = serverTimestamp();
   try { await setDoc(doc(db, "users", u.uid), data, { merge: true }); localStorage.setItem("nwios_fs", "1"); } catch (e) {}
+}
+
+export async function pullSync() {
+  const u = auth.currentUser;
+  if (!u) return null;
+  const s = await getDoc(doc(db, "sync", u.uid));
+  return s.exists() ? s.data() : null;
+}
+
+export async function pushSync(data) {
+  const u = auth.currentUser;
+  if (u) await setDoc(doc(db, "sync", u.uid), data);
+}
+
+export async function deleteSync() {
+  const u = auth.currentUser;
+  if (u) await deleteDoc(doc(db, "sync", u.uid));
 }
