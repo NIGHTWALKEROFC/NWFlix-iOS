@@ -1,4 +1,5 @@
 import { streamUrl } from "./tg.js";
+import { attach } from "./mkv.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const fmt = (s) => {
@@ -22,7 +23,7 @@ function parseSubs(text) {
 }
 
 export function play({ m, label, settings, pos, save, view, back, onSeen, next }) {
-  const risky = /\.(mkv|avi|wmv|flv|ts)$/i.test(m.name);
+  const risky = /\.(avi|wmv|flv|ts)$/i.test(m.name);
   view(`<div class="player" id="pl">
     <video id="v" playsinline autoplay preload="auto"></video>
     <div id="sub" class="sub"></div>
@@ -48,7 +49,11 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, next }
   const v = $("v"), pl = $("pl"), menu = $("menu"), sub = $("sub");
   let cues = [], delay = 0, hideT = 0, msgT = 0, seeking = false, marked = false, ticks = 0;
 
-  v.src = streamUrl(m);
+  let mk = null;
+  if (/\.mkv$/i.test(m.name)) {
+    $("msg").textContent = "Preparing MKV…";
+    attach(v, m).then((c) => { mk = c; $("msg").textContent = c.note; }).catch((e) => { $("msg").textContent = e.message; pl.classList.add("show"); });
+  } else v.src = streamUrl(m);
   v.playbackRate = settings.speed;
 
   const flash = (t) => { $("msg").textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { $("msg").textContent = ""; }, 900); };
@@ -116,7 +121,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, next }
     else if (v.requestPictureInPicture) v.requestPictureInPicture().catch(() => flash("Picture in picture is not available"));
     else flash("Picture in picture is not available");
   };
-  $("back").onclick = () => { clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
+  $("back").onclick = () => { if (mk) mk.destroy(); clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
 
   const g = $("gest");
   let sx = 0, sy = 0, moved = false, drag = 0, lastTap = 0, tapT = 0;
