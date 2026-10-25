@@ -7,12 +7,12 @@ const app = initializeApp({
   authDomain: "nwflix-4ea44.firebaseapp.com",
   projectId: "nwflix-4ea44",
   appId: "1:277538993543:web:b2521848009f7be4604f22"
-});
+}, "nwflix-ios");
 const auth = getAuth(app);
 const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 
 export const ready = () => new Promise((res) => {
-  const off = onAuthStateChanged(auth, (u) => { off(); res(u); });
+  const off = onAuthStateChanged(auth, (u) => { off(); res(u && u.providerData.some((p) => p.providerId === "google.com") ? u : null); });
 });
 
 export const email = () => (auth.currentUser && auth.currentUser.email) || "";
