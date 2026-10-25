@@ -29,7 +29,7 @@ export async function resume() {
     if (!(await client.checkAuthorization())) return false;
     loadChats().catch(() => {});
     return true;
-  } catch (e) { return false; }
+  } catch (e) { return "error"; }
 }
 
 export async function login(ask) {
@@ -71,7 +71,7 @@ export async function login(ask) {
 export async function logout() {
   try { await client.invoke(new Api.auth.LogOut()); } catch (e) {}
   localStorage.removeItem(SESSION_KEY);
-  ["nwios_lib", "nwios_user", "nwios_pos", "nwios_fs", "nwios_time"].forEach((k) => localStorage.removeItem(k));
+  ["nwios_lib", "nwios_user", "nwios_pos", "nwios_fs", "nwios_time", "nwios_cur", "nwios_syncT"].forEach((k) => localStorage.removeItem(k));
   location.reload();
 }
 
@@ -104,7 +104,7 @@ export async function me() {
   try { const u = await client.getMe(); return u.firstName || u.username || ""; } catch (e) { return ""; }
 }
 
-export async function scan(onProgress) {
+export async function scan(onProgress, cursor = {}, known = []) {
   const dialogs = await loadChats();
   const raws = [], out = [], seen = new Set();
   let next = 0, done = 0, errors = 0, docs = 0, passed = 0, firstErr = "";
@@ -128,33 +128,37 @@ export async function scan(onProgress) {
     raws.push(r);
   };
 
-  const pages = async (d, F) => {
+  const pages = async (d, F, prev) => {
     const peer = d.inputEntity || (await client.getInputEntity(d.entity));
-    let offsetId = 0;
+    let offsetId = 0, top = prev;
     for (let i = 0; i < 40; i++) {
       const res = await client.invoke(new Api.messages.Search({
-        peer, q: "", filter: new F(), minDate: 0, maxDate: 0, offsetId, addOffset: 0, limit: 100, maxId: 0, minId: 0, hash: bigInt(0)
+        peer, q: "", filter: new F(), minDate: 0, maxDate: 0, offsetId, addOffset: 0, limit: 100, maxId: 0, minId: prev, hash: bigInt(0)
       }));
       const msgs = res.messages || [];
-      msgs.forEach((m) => take(d, m));
+      msgs.forEach((m) => { if (m.id > top) top = m.id; take(d, m); });
       if (msgs.length < 100) break;
       offsetId = msgs[msgs.length - 1].id;
     }
+    return top;
   };
 
   const worker = async () => {
     while (next < dialogs.length) {
       const d = dialogs[next++];
+      const key = d.id.toString(), prev = cursor[key] || 0;
+      let top = prev, ok = true;
       for (const F of [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument]) {
-        try { await pages(d, F); } catch (e) { errors++; firstErr = firstErr || String((e && (e.errorMessage || e.message)) || e); }
+        try { top = Math.max(top, await pages(d, F, prev)); } catch (e) { ok = false; errors++; firstErr = firstErr || String((e && (e.errorMessage || e.message)) || e); }
       }
+      if (ok) cursor[key] = top;
       done++;
       onProgress(raws.length, done, dialogs.length);
     }
   };
   await Promise.all([worker(), worker(), worker()]);
 
-  learnHandles(raws.map((r) => r.name));
+  learnHandles(raws.map((r) => r.name).concat(known));
   for (const r of raws) {
     const p = parse(r.name, r.cap);
     if (p) out.push(Object.assign(r, p));
