@@ -58,10 +58,11 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   const v = $("v"), pl = $("pl"), menu = $("menu"), sub = $("sub");
   let cues = [], delay = 0, hideT = 0, msgT = 0, seeking = false, marked = false, ticks = 0;
 
-  let mk = null;
+  let mk = null, gone = false;
   if (/\.mkv$/i.test(m.name)) {
     $("msg").textContent = "Preparing MKV…";
     attach(v, m, { onCue: (tn, c) => { (emb[tn] = emb[tn] || []).push(c); }, buffer: () => settings.buffer }).then((c) => {
+      if (gone) { c.destroy(); return; }
       mk = c;
       $("msg").textContent = c.note;
       if (c.audios.length > 1) {
@@ -72,7 +73,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
         $("slab").classList.remove("hidden");
         $("es").innerHTML = '<option value="0">Off</option>' + c.subs.map((s) => `<option value="${s.num}">${esc(s.label)}</option>`).join("");
       }
-    }).catch((e) => { $("msg").textContent = e.message; pl.classList.add("show"); });
+    }).catch((e) => { if (gone) return; $("msg").textContent = e.message; pl.classList.add("show"); });
   } else v.src = streamUrl(m);
   v.playbackRate = settings.speed;
 
@@ -116,7 +117,13 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   const keepAwake = async () => { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } } catch (e) {} };
   v.addEventListener("play", keepAwake);
   if (settings.vol !== 1) v.addEventListener("play", () => setVol(settings.vol), { once: true });
-  const flash = (t) => { $("msg").textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { $("msg").textContent = ""; }, 900); };
+  const flash = (t) => {
+    const e = $("msg");
+    if (!e) return;
+    e.textContent = t;
+    clearTimeout(msgT);
+    msgT = setTimeout(() => { const x = $("msg"); if (x) x.textContent = ""; }, 900);
+  };
   const show = () => {
     pl.classList.add("show");
     clearTimeout(hideT);
@@ -127,7 +134,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   styleSub();
 
   const last = pos[m.id];
-  v.addEventListener("loadedmetadata", () => {
+  v.addEventListener("loadedmetadata", () => { if (gone) return;
     if (settings.resume && last > 5 && last < v.duration - 30) v.currentTime = last;
     v.playbackRate = settings.speed;
     $("dur").textContent = fmt(v.duration);
@@ -136,7 +143,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
       $("at").innerHTML = Array.from(v.audioTracks).map((t, i) => `<option value="${i}" ${t.enabled ? "selected" : ""}>${esc(t.label || t.language || "Track " + (i + 1))}</option>`).join("");
     }
   });
-  v.addEventListener("timeupdate", () => {
+  v.addEventListener("timeupdate", () => { if (gone) return;
     $("cur").textContent = fmt(v.currentTime);
     if (!seeking && v.duration) $("seek").value = Math.round((v.currentTime / v.duration) * 1000);
     const nt = v.currentTime;
@@ -148,10 +155,10 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     if (!marked && v.duration && v.currentTime / v.duration >= 0.92) { marked = true; onSeen(m); }
     if (++ticks % 20 === 0) save();
   });
-  v.addEventListener("play", () => { $("pp").textContent = "❚❚"; show(); });
-  v.addEventListener("pause", () => { $("pp").textContent = "▶"; pl.classList.add("show"); });
-  v.addEventListener("ended", () => { if (!marked) { marked = true; onSeen(m); } pos[m.id] = 0; save(); if (next && !sleepEnd) { clearInterval(tick); next(); } });
-  v.addEventListener("error", () => { $("msg").textContent = "This file can't be played in your browser."; pl.classList.add("show"); });
+  v.addEventListener("play", () => { if (gone) return; $("pp").textContent = "❚❚"; show(); });
+  v.addEventListener("pause", () => { if (gone) return; $("pp").textContent = "▶"; pl.classList.add("show"); });
+  v.addEventListener("ended", () => { if (gone) return; if (!marked) { marked = true; onSeen(m); } pos[m.id] = 0; save(); if (next && !sleepEnd) { clearInterval(tick); next(); } });
+  v.addEventListener("error", () => { if (gone) return; $("msg").textContent = "This file can't be played in your browser."; pl.classList.add("show"); });
 
   const tick = setInterval(() => {
     const t = v.currentTime;
@@ -214,7 +221,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     else if (v.requestPictureInPicture) v.requestPictureInPicture().catch(() => flash("Picture in picture is not available"));
     else flash("Picture in picture is not available");
   };
-  $("back").onclick = () => { clearTimeout(sleepT); if ("mediaSession" in navigator) navigator.mediaSession.metadata = null; if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause();
+  $("back").onclick = () => { gone = true; clearTimeout(msgT); clearTimeout(sleepT); if ("mediaSession" in navigator) navigator.mediaSession.metadata = null; if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause();
     removeEventListener("resize", onResize);
     if (wake) wake.release();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
