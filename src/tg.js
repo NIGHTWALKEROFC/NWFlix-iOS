@@ -175,6 +175,23 @@ async function message(item) {
   return m;
 }
 
+export async function readRange(item, start, len) {
+  const m = await message(item);
+  const end = Math.min(item.size, start + len);
+  const first = Math.floor(start / CHUNK) * CHUNK;
+  const parts = [];
+  let pos = first, total = 0;
+  if (start >= item.size) return new Uint8Array(0);
+  for await (const c of client.iterDownload({ file: m.media, offset: bigInt(first), requestSize: CHUNK, fileSize: bigInt(item.size) })) {
+    parts.push(c); total += c.length; pos += c.length;
+    if (pos >= end) break;
+  }
+  const all = new Uint8Array(total);
+  let o = 0;
+  for (const c of parts) { all.set(c, o); o += c.length; }
+  return all.subarray(start - first, Math.min(total, end - first));
+}
+
 export function streamUrl(item) {
   return "stream/" + encodeURIComponent(item.id) + "?size=" + item.size + "&mime=" + encodeURIComponent(item.mime);
 }
