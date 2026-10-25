@@ -22,7 +22,7 @@ function parseSubs(text) {
   }).filter(Boolean);
 }
 
-export function play({ m, label, settings, pos, save, view, back, onSeen, next }) {
+export function play({ m, label, settings, pos, save, view, back, onSeen, onWatch, next }) {
   const risky = /\.(avi|wmv|flv|ts)$/i.test(m.name);
   view(`<div class="player" id="pl">
     <video id="v" playsinline autoplay preload="auto"></video>
@@ -42,6 +42,9 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, next }
       <button id="sf">Load subtitles (.srt or .vtt)</button><input id="sfile" type="file" accept=".srt,.vtt,text/plain" hidden>
       <button id="so">Subtitles off</button>
       <label id="alab" class="hidden">Audio track<select id="at"></select></label>
+      <label id="slab" class="hidden">Embedded subtitles<select id="es"></select></label>
+      <label>Volume<input id="vol" type="range" min="0" max="200" value="${Math.round(settings.vol * 100)}"></label>
+      <label>Brightness<input id="br" type="range" min="40" max="160" value="${Math.round(settings.bright * 100)}"></label>
       <button id="pip">Picture in picture</button>
       <button id="mc" class="ghost">Close</button>
     </div></div>`);
@@ -52,10 +55,40 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, next }
   let mk = null;
   if (/\.mkv$/i.test(m.name)) {
     $("msg").textContent = "Preparing MKV…";
-    attach(v, m).then((c) => { mk = c; $("msg").textContent = c.note; }).catch((e) => { $("msg").textContent = e.message; pl.classList.add("show"); });
+    attach(v, m, { onCue: (tn, c) => { (emb[tn] = emb[tn] || []).push(c); }, buffer: () => settings.buffer }).then((c) => {
+      mk = c;
+      $("msg").textContent = c.note;
+      if (c.audios.length > 1) {
+        $("alab").classList.remove("hidden");
+        $("at").innerHTML = c.audios.map((a) => `<option value="${a.i}" ${a.i === c.activeAudio() ? "selected" : ""}>${a.label}</option>`).join("");
+      }
+      if (c.subs.length) {
+        $("slab").classList.remove("hidden");
+        $("es").innerHTML = '<option value="0">Off</option>' + c.subs.map((s) => `<option value="${s.num}">${s.label}</option>`).join("");
+      }
+    }).catch((e) => { $("msg").textContent = e.message; pl.classList.add("show"); });
   } else v.src = streamUrl(m);
   v.playbackRate = settings.speed;
 
+  let actx = null, gain = null, acc = 0, lastT = 0, mode = "", ly = 0;
+  const emb = {};
+  const setVol = (x) => {
+    settings.vol = Math.max(0, Math.min(2, x));
+    if (!actx && settings.vol === 1) return;
+    if (!actx) {
+      const A = window.AudioContext || window.webkitAudioContext;
+      actx = new A();
+      const src = actx.createMediaElementSource(v);
+      gain = actx.createGain();
+      src.connect(gain);
+      gain.connect(actx.destination);
+    }
+    if (actx.state === "suspended") actx.resume();
+    gain.gain.value = settings.vol;
+  };
+  const setBright = (x) => { settings.bright = Math.max(0.4, Math.min(1.6, x)); v.style.filter = "brightness(" + settings.bright + ")"; };
+  setBright(settings.bright);
+  if (settings.vol !== 1) v.addEventListener("play", () => setVol(settings.vol), { once: true });
   const flash = (t) => { $("msg").textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { $("msg").textContent = ""; }, 900); };
   const show = () => {
     pl.classList.add("show");
@@ -79,6 +112,10 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, next }
   v.addEventListener("timeupdate", () => {
     $("cur").textContent = fmt(v.currentTime);
     if (!seeking && v.duration) $("seek").value = Math.round((v.currentTime / v.duration) * 1000);
+    const nt = v.currentTime;
+    if (!v.paused && nt > lastT && nt - lastT < 3) acc += nt - lastT;
+    lastT = nt;
+    if (acc >= 10) { onWatch(acc); acc = 0; }
     pos[m.id] = Math.floor(v.currentTime);
     if (!marked && v.duration && v.currentTime / v.duration >= 0.92) { marked = true; onSeen(m); }
     if (++ticks % 20 === 0) save();
@@ -115,28 +152,46 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, next }
     flash(cues.length ? "Subtitles loaded" : "Could not read that file");
   };
   $("so").onclick = () => { cues = []; sub.textContent = ""; };
-  $("at").onchange = (e) => { Array.from(v.audioTracks).forEach((t, i) => { t.enabled = i === Number(e.target.value); }); };
+  $("at").onchange = async (e) => {
+    if (mk) { const ok = await mk.setAudio(Number(e.target.value)); if (!ok) flash("That audio format isn't supported"); }
+    else Array.from(v.audioTracks).forEach((t, i) => { t.enabled = i === Number(e.target.value); });
+  };
+  $("es").onchange = (e) => {
+    const n = Number(e.target.value);
+    if (!n) { cues = []; sub.textContent = ""; } else { emb[n] = emb[n] || []; cues = emb[n]; }
+  };
+  $("vol").oninput = (e) => setVol(e.target.value / 100);
+  $("br").oninput = (e) => setBright(e.target.value / 100);
+  $("vol").onchange = save;
+  $("br").onchange = save;
   $("pip").onclick = () => {
     if (v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode("picture-in-picture")) v.webkitSetPresentationMode("picture-in-picture");
     else if (v.requestPictureInPicture) v.requestPictureInPicture().catch(() => flash("Picture in picture is not available"));
     else flash("Picture in picture is not available");
   };
-  $("back").onclick = () => { if (mk) mk.destroy(); clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
+  $("back").onclick = () => { if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
 
   const g = $("gest");
   let sx = 0, sy = 0, moved = false, drag = 0, lastTap = 0, tapT = 0;
-  g.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false; drag = 0; }, { passive: true });
+  g.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false; drag = 0; mode = ""; }, { passive: true });
   g.addEventListener("touchmove", (e) => {
     if (!settings.gestures) return;
-    const dx = e.touches[0].clientX - sx;
-    if (Math.abs(dx) > 25 && Math.abs(dx) > Math.abs(e.touches[0].clientY - sy)) {
+    const t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (!mode && (Math.abs(dx) > 25 || Math.abs(dy) > 25)) { mode = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; ly = t.clientY; }
+    if (mode === "h") {
       moved = true;
       drag = Math.round((dx / g.clientWidth) * 120);
       flash((drag >= 0 ? "+" : "") + drag + "s");
+    } else if (mode === "v") {
+      moved = true;
+      const d = ((ly - t.clientY) / g.clientHeight) * 1.2;
+      ly = t.clientY;
+      if (sx < g.clientWidth / 2) { setBright(settings.bright + d); flash("Brightness " + Math.round(settings.bright * 100) + "%"); }
+      else { setVol(settings.vol + d); flash("Volume " + Math.round(settings.vol * 100) + "%"); }
     }
   }, { passive: true });
   g.addEventListener("touchend", () => {
-    if (moved) { if (drag) v.currentTime = Math.max(0, Math.min(v.duration || 1e9, v.currentTime + drag)); return; }
+    if (moved) { if (drag) v.currentTime = Math.max(0, Math.min(v.duration || 1e9, v.currentTime + drag)); save(); return; }
     const now = Date.now();
     if (now - lastTap < 300) {
       clearTimeout(tapT); lastTap = 0;
