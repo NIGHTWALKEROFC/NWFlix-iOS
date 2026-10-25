@@ -33,30 +33,52 @@ const gb = (b) => (b / 1073741824).toFixed(2) + " GB";
 function view(html) { root.innerHTML = html; }
 
 function ask(kind, text) {
-  if (kind === "error") { const e = document.getElementById("err"); if (e) e.textContent = text; return; }
+  if (kind === "error") {
+    const e = document.getElementById("err");
+    if (e) e.textContent = text;
+    const g = document.getElementById("go");
+    if (g) g.disabled = false;
+    return;
+  }
+  const logo = '<img src="icon.png" width="96" height="96" alt="">';
   if (kind === "code") {
-    view(`<div class="login"><img src="icon.png" width="96" height="96" alt=""><h1>Enter the code</h1><p class="muted">We sent it to your Telegram app</p>
+    view(`<div class="login">${logo}<h1>Enter the code</h1><p class="muted">We sent it to your Telegram app</p>
       <div class="otp"><div class="boxes">${"<i></i>".repeat(5)}</div><input id="v" type="tel" inputmode="numeric" autocomplete="one-time-code" maxlength="5"></div>
-      <p id="err" class="bad"></p><button id="gd" class="linkbtn">Where do I find the code?</button></div>`);
-    document.getElementById("gd").onclick = () => guides.openGuide("otp");
-    const input = document.getElementById("v");
+      <p id="err" class="bad">${esc(text || "")}</p>
+      <button id="go" class="btn">Continue</button>
+      <button id="rs" class="linkbtn" disabled>Resend code in 30s</button>
+      <button id="gd" class="linkbtn">Where do I find the code?</button></div>`);
+    const input = document.getElementById("v"), go = document.getElementById("go"), rs = document.getElementById("rs");
     const boxes = [...document.querySelectorAll(".boxes i")];
+    document.getElementById("gd").onclick = () => guides.openGuide("otp");
     input.focus();
+    let left = 30;
+    const timer = setInterval(() => {
+      left--;
+      if (left <= 0) { clearInterval(timer); rs.disabled = false; rs.textContent = "Resend code"; }
+      else rs.textContent = "Resend code in " + left + "s";
+    }, 1000);
     return new Promise((res) => {
+      const submit = () => {
+        if (input.value.length < 5) { document.getElementById("err").textContent = "Enter all 5 digits."; return; }
+        clearInterval(timer); go.disabled = true; res(input.value);
+      };
       input.oninput = () => {
         const v = input.value.replace(/\D/g, "");
         input.value = v;
         boxes.forEach((b, i) => { b.textContent = v[i] || ""; b.className = i === v.length ? "cur" : v[i] ? "fill" : ""; });
-        if (v.length === 5) res(v);
       };
+      input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+      go.onclick = submit;
+      rs.onclick = () => { clearInterval(timer); res("__resend__"); };
     });
   }
-  const labels = { phone: ["Phone number", "+91 98765 43210", "tel"], code: ["Code from Telegram", "12345", "tel"], password: ["Two-step password", "Password", "password"] };
+  const labels = { phone: ["Phone number", "+91 98765 43210", "tel"], password: ["Two-step password", "Password", "password"] };
   const [title, hint, type] = labels[kind];
-  view(`<div class="login"><img src="icon.png" width="72" height="72" alt=""><h1>NWFlix iOS</h1>
+  view(`<div class="login">${logo}<h1>NWFlix iOS</h1>
     <p>${kind === "phone" ? "Sign in with your Telegram number" : esc(title)}</p>
-    <input id="v" type="${type}" placeholder="${hint}" autocomplete="off" ${kind === "code" ? 'inputmode="numeric"' : ""}>
-    <p id="err" class="bad"></p><button id="go" class="btn">Continue</button></div>`);
+    <input id="v" type="${type}" placeholder="${hint}" autocomplete="off">
+    <p id="err" class="bad">${esc(text || "")}</p><button id="go" class="btn">Continue</button></div>`);
   const input = document.getElementById("v");
   input.focus();
   return new Promise((res) => {
@@ -78,16 +100,18 @@ function a2hs(force) {
   b.innerHTML = `<div class="dialog"><img src="icon.png" width="64" height="64" alt="" style="border-radius:16px;align-self:center">
     <h2>Add NWFlix iOS to your Home Screen</h2><p>Open it like a real app: full screen, with no browser bar.</p>
     ${installEvt ? '<button id="ai" class="btn">Install</button>' : '<ol class="steps"><li>Tap the <b>Share</b> button in your browser <svg class="shr" viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 00-1 1v8a1 1 0 001 1h14a1 1 0 001-1v-8a1 1 0 00-1-1h-1"/></svg></li><li>Scroll down and tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b></li></ol>'}
-    <button id="ao" class="btn ghost">${installEvt ? "Not now" : "Got it"}</button></div>`;
+    ${installEvt ? "" : '<button id="ao" class="btn ghost">Got it</button>'}</div>`;
+  b.onclick = (e) => { if (e.target === b) b.remove(); };
   document.body.appendChild(b);
-  document.getElementById("ao").onclick = () => b.remove();
+  const ao = document.getElementById("ao");
+  if (ao) ao.onclick = () => b.remove();
   const ai = document.getElementById("ai");
   if (ai) ai.onclick = async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; b.remove(); };
 }
 
 async function gate() {
   if (await rc.ready()) return;
-  view(`<div class="login"><img src="icon.png" width="72" height="72" alt=""><h1>NWFlix iOS</h1><p>Sign in with your email</p>
+  view(`<div class="login"><img src="icon.png" width="72" height="72" alt=""><h1>NWFlix iOS</h1><p>One last step: sign in with your email</p>
     <button id="g" class="btn">Continue with Google</button><p id="err" class="bad"></p></div>`);
   await new Promise((res) => {
     document.getElementById("g").onclick = async () => {
@@ -120,17 +144,17 @@ function applyRemote(c) {
 }
 
 async function boot() {
+  if (!tg.hasKeys()) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">Telegram keys are missing in this build.</p></div>'); return; }
   if (!tg.hasSession()) await rc.logout();
+  view('<div class="login"><div class="spin"></div></div>');
+  if (!("serviceWorker" in navigator)) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">This browser cannot stream. Update iOS and open this page in Safari.</p></div>'); return; }
+  if (!(await tg.resume())) {
+    try { await tg.login(ask); } catch (e) { view(`<div class="login"><p class="bad">${esc(tg.friendly(e.message || ""))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`); return; }
+  }
   await gate();
   rc.watchConfig(applyRemote);
   if (settings.stats) rc.heartbeat();
-  if (!tg.hasKeys()) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">Telegram keys are missing in this build.</p></div>'); return; }
-  view('<div class="login"><div class="spin"></div></div>');
-  if (!("serviceWorker" in navigator)) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">This browser cannot stream. Update iOS and open this page in Safari.</p></div>'); return; }
-  let ok = await tg.resume();
-  if (!ok) {
-    try { await tg.login(ask); ok = true; } catch (e) { view(`<div class="login"><p class="bad">${esc(tg.friendly(e.message || ""))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`); return; }
-  }
+  tg.me().then((n) => { userName = n; });
   await tg.startStreaming(() => library);
   if (!localStorage.getItem("nwios_a2hs")) setTimeout(() => a2hs(false), 1800);
   home();
@@ -140,6 +164,7 @@ async function boot() {
 const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.getItem("nwios_user") || "{}"));
 const saveUd = () => localStorage.setItem("nwios_user", JSON.stringify(ud));
 let scanNote = "";
+let userName = "";
 let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "";
 
 const ICONS = {
@@ -374,50 +399,91 @@ function play(m, back, next) {
   });
 }
 
+const SI = {
+  account: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0",
+  privacy: "M6 11V8a6 6 0 0112 0v3M5 11h14v10H5z",
+  player: "M12 3a9 9 0 100 18 9 9 0 000-18zM10 8l6 4-6 4z",
+  library: "M3 6h7l2 2h9v12H3z",
+  stats: "M5 20V10M12 20V4M19 20v-7",
+  help: "M12 3a9 9 0 100 18 9 9 0 000-18zM9.5 9.5a2.5 2.5 0 115 0c0 1.5-2.5 2-2.5 3.5M12 17v.5",
+  privacy_policy: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
+  terms: "M6 3h9l4 4v14H6zM9 12h6M9 16h6",
+  disclaimer: "M12 3l10 18H2zM12 10v5M12 18v.5",
+  about: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v6M12 7.5v.5"
+};
+const SECTIONS = [
+  ["Account", [["account", "Account & Security", "Telegram session, sign out"], ["privacy", "Privacy & Security", "Statistics and your data"]]],
+  ["Preferences", [["player", "Player Settings", "Playback, subtitles, gestures"], ["library", "Library", "Details, history, rescan"]]],
+  ["Activity", [["stats", "Watch statistics", "Your movies and lists"]]],
+  ["App", [["help", "Help & Support", "Guides and Home Screen"]]],
+  ["Legal", [["privacy_policy", "Privacy Policy", "How your information is used"], ["terms", "Terms & Conditions", "Rules for using NWFlix"], ["disclaimer", "Disclaimer & Copyright", "Content and credits"]]],
+  ["About", [["about", "About NWFlix iOS", "Developer, credits and contact"]]]
+];
+const srow = (k, t, s) => `<button class="srow" data-k="${k}"><span class="sico"><svg viewBox="0 0 24 24"><path d="${SI[k]}"/></svg></span><span class="stx"><b>${t}</b><small>${s}</small></span><i class="chev">›</i></button>`;
+const sw = (id, label, on) => `<label class="sw">${label}<input id="${id}" type="checkbox" ${on ? "checked" : ""}></label>`;
+const sel = (id, label, opts, cur) => `<label class="sw">${label}<select id="${id}">${opts.map((n) => `<option ${String(n) === String(cur) ? "selected" : ""}>${n}</option>`).join("")}</select></label>`;
+const page = (t, body, backFn) => {
+  view(`<header class="bar"><button id="b" class="ico">Back</button><b>${t}</b><span></span></header><div class="list">${body}</div>`);
+  document.getElementById("b").onclick = backFn;
+};
+const $ = (id) => document.getElementById(id);
+const flag = (id, key) => { $(id).onchange = (e) => { settings[key] = e.target.checked; save(); }; };
+const num = (id, key) => { $(id).onchange = (e) => { settings[key] = Number(e.target.value); save(); }; };
+
 function settingsView() {
-  const sw = (id, label, on) => `<label>${label}<input id="${id}" type="checkbox" ${on ? "checked" : ""}></label>`;
-  const row = (id, label, sub) => `<button id="${id}" class="link"><span>${label}</span><small>${sub}</small></button>`;
+  const email = rc.email();
   view(`<header class="bar"><button id="b" class="ico">Back</button><b>Settings</b><span></span></header>
-    <div class="list">
-      <h3 class="sec">Playback</h3>
-      ${sw("r", "Resume where I stopped", settings.resume)}
-      ${sw("gs", "Swipe to seek and double-tap to skip", settings.gestures)}
-      <label>Skip buttons (seconds)<select id="k">${[5, 10, 15, 30].map((n) => `<option ${n === settings.skip ? "selected" : ""}>${n}</option>`).join("")}</select></label>
-      <label>Subtitle size<select id="ss">${[16, 20, 24, 28, 34].map((n) => `<option ${n === settings.subSize ? "selected" : ""}>${n}</option>`).join("")}</select></label>
-      ${sw("sb", "Subtitle background", settings.subBg)}
-      <h3 class="sec">Library</h3>
-      ${sw("h", "Hide movies without details", settings.hide)}
-      <button id="clr" class="btn ghost">Clear watch history</button>
-      <button id="rst" class="btn ghost">Clear library and rescan</button>
-      <h3 class="sec">Privacy</h3>
-      ${sw("st", "Share anonymous usage statistics", settings.stats)}
-      <h3 class="sec">Account</h3>
-      <p class="muted nopad">Signed in as ${esc(rc.email())}</p>
-      <button id="out" class="btn ghost">Sign out</button>
-      <h3 class="sec">Help</h3>
-      ${row("h-otp", "Where to find the login code", "Step by step, English and മലയാളം")}
-      ${row("h-mov", "How to get movies in NWFlix", "Step by step, English and മലയാളം")}
-      ${row("h-a2", "Add to Home Screen", "Open NWFlix like a real app")}
-      <h3 class="sec">Legal</h3>
-      ${row("l-privacy", "Privacy Policy", "How your information is used")}
-      ${row("l-terms", "Terms & Conditions", "Rules for using the app")}
-      ${row("l-disclaimer", "Disclaimer & Copyright", "Content and credits")}
-      <h3 class="sec">About</h3>
-      ${row("l-about", "About NWFlix iOS", "Developer, credits and contact")}
-    </div>`);
-  const $ = (id) => document.getElementById(id);
-  const flag = (id, key) => { $(id).onchange = (e) => { settings[key] = e.target.checked; save(); }; };
-  const num = (id, key) => { $(id).onchange = (e) => { settings[key] = Number(e.target.value); save(); }; };
-  flag("r", "resume"); flag("gs", "gestures"); flag("sb", "subBg"); flag("h", "hide"); flag("st", "stats"); num("k", "skip"); num("ss", "subSize");
+    <div class="profile"><div class="avatar">${esc((userName || email || "N")[0].toUpperCase())}</div>
+      <div><b>${esc(userName || "NWFlix user")}</b><small>Connected with Telegram</small>${email ? `<small>${esc(email)}</small>` : ""}</div></div>
+    ${SECTIONS.map(([h, rows]) => `<h3 class="grp">${h}</h3><div class="sgroup">${rows.map((r) => srow(...r)).join("")}</div>`).join("")}
+    <p class="muted center ver">NWFlix iOS 1.0</p>`);
   $("b").onclick = () => home();
-  $("clr").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("clr").textContent = "History cleared"; };
-  $("rst").onclick = () => { library = []; localStorage.setItem(LIB, "[]"); home(); rescan(); };
-  $("out").onclick = async () => { await rc.logout(); tg.logout(); };
-  ["privacy", "terms", "disclaimer"].forEach((k) => ($("l-" + k).onclick = () => legalView(k)));
-  $("l-about").onclick = aboutView;
-  $("h-otp").onclick = () => guides.openGuide("otp");
-  $("h-mov").onclick = () => guides.openGuide("movies");
-  $("h-a2").onclick = () => a2hs(true);
+  document.querySelectorAll(".srow").forEach((r) => (r.onclick = () => {
+    const k = r.dataset.k;
+    if (["privacy_policy", "terms", "disclaimer"].includes(k)) legalView(k === "privacy_policy" ? "privacy" : k);
+    else if (k === "about") aboutView();
+    else settingsPage(k);
+  }));
+}
+
+function settingsPage(k) {
+  const back = settingsView;
+  if (k === "account") {
+    page("Account & Security", `<p class="muted nopad">Signed in as ${esc(rc.email())}</p><p class="muted nopad">Your Telegram session is stored only in this browser.</p>
+      <button id="rs" class="btn ghost">Rescan Telegram chats</button><button id="out" class="btn ghost">Sign out</button>`, back);
+    $("rs").onclick = () => { home(); rescan(); };
+    $("out").onclick = async () => { await rc.logout(); tg.logout(); };
+  } else if (k === "privacy") {
+    page("Privacy & Security", `${sw("st", "Share anonymous usage statistics", settings.stats)}
+      <p class="muted nopad">Only your app version, iOS version, country and how often you open the app. Never what you watch.</p>
+      <button id="del" class="btn ghost">Delete my data on this device</button>`, back);
+    flag("st", "stats");
+    $("del").onclick = async () => { await rc.logout(); tg.logout(); };
+  } else if (k === "player") {
+    page("Player Settings", `${sw("r", "Resume where I stopped", settings.resume)}${sw("gs", "Swipe to seek, double-tap to skip", settings.gestures)}
+      ${sel("k", "Skip buttons (seconds)", [5, 10, 15, 30], settings.skip)}${sel("sp", "Default speed", [0.5, 0.75, 1, 1.25, 1.5, 2], settings.speed)}
+      ${sel("ss", "Subtitle size", [16, 20, 24, 28, 34], settings.subSize)}${sw("sb", "Subtitle background", settings.subBg)}`, back);
+    flag("r", "resume"); flag("gs", "gestures"); flag("sb", "subBg"); num("k", "skip"); num("sp", "speed"); num("ss", "subSize");
+  } else if (k === "library") {
+    page("Library", `${sw("h", "Hide movies without details", settings.hide)}
+      <button id="clr" class="btn ghost">Clear watch history</button><button id="rst" class="btn ghost">Clear library and rescan</button>`, back);
+    flag("h", "hide");
+    $("clr").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("clr").textContent = "History cleared"; };
+    $("rst").onclick = () => { library = []; localStorage.setItem(LIB, "[]"); home(); rescan(); };
+  } else if (k === "stats") {
+    const gs = groups();
+    const cell = (n, t) => `<div class="stat"><b>${n}</b><small>${t}</small></div>`;
+    page("Watch statistics", `<div class="stats">${cell(gs.filter((g) => !isSeries(g)).length, "Movies")}${cell(gs.filter(isSeries).length, "Series")}
+      ${cell(gs.filter(watched).length, "Watched")}${cell(gs.filter(started).length, "In progress")}${cell(Object.keys(ud.wl).filter((x) => ud.wl[x]).length, "Watchlist")}${cell(Object.keys(ud.fav).filter((x) => ud.fav[x]).length, "Favorites")}</div>`, back);
+  } else if (k === "help") {
+    page("Help & Support", `<div class="sgroup">
+      <button class="srow" id="h1"><span class="stx"><b>Where to find the login code</b><small>English and മലയാളം</small></span><i class="chev">›</i></button>
+      <button class="srow" id="h2"><span class="stx"><b>How to get movies in NWFlix</b><small>English and മലയാളം</small></span><i class="chev">›</i></button>
+      <button class="srow" id="h3"><span class="stx"><b>Add to Home Screen</b><small>Open NWFlix like a real app</small></span><i class="chev">›</i></button></div>`, back);
+    $("h1").onclick = () => guides.openGuide("otp");
+    $("h2").onclick = () => guides.openGuide("movies");
+    $("h3").onclick = () => a2hs(true);
+  }
 }
 
 function legalView(k) {
