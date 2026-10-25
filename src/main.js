@@ -6,6 +6,8 @@ import * as legal from "./legal.js";
 import * as guides from "./guides.js";
 
 const root = document.getElementById("app");
+const put = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const jp = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v && typeof v === "object" ? v : d; } catch (e) { return d; } };
 setTimeout(() => {
   const s = document.getElementById("splash");
   if (s) { s.classList.add("out"); setTimeout(() => s.remove(), 600); }
@@ -13,12 +15,13 @@ setTimeout(() => {
 const LIB = "nwios_lib";
 const POS = "nwios_pos";
 const SET = "nwios_set";
-let library = JSON.parse(localStorage.getItem(LIB) || "[]");
-let pos = JSON.parse(localStorage.getItem(POS) || "{}");
-let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true, vol: 1, bright: 1, text: 17, accent: "#B88CFF", buffer: 40, saver: false, sync: true, fit: "contain" }, JSON.parse(localStorage.getItem(SET) || "{}"));
+let library = jp(LIB, []);
+let pos = jp(POS, {});
+let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true, vol: 1, bright: 1, text: 17, accent: "#B88CFF", buffer: 40, saver: false, sync: true, fit: "contain" }, jp(SET, {}));
 let pending = null;
 
-const save = () => localStorage.setItem(SET, JSON.stringify(settings));
+const save = () => put(SET, JSON.stringify(settings));
+if (settings.v !== 2) { settings.text = 16; settings.v = 2; save(); }
 function applyTheme() {
   document.documentElement.style.setProperty("--acc", settings.accent);
   document.documentElement.style.fontSize = settings.text + "px";
@@ -122,7 +125,7 @@ addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt 
 
 function a2hs(force) {
   if (!force && (matchMedia("(display-mode: standalone)").matches || navigator.standalone)) return;
-  if (!force) localStorage.setItem("nwios_a2hs", "1");
+  if (!force) put("nwios_a2hs", "1");
   const b = document.createElement("div");
   b.className = "cover dim";
   b.style.zIndex = 70;
@@ -167,7 +170,7 @@ function applyRemote(c) {
   box.innerHTML = `<div class="dialog"><h2>${esc(c.annTitle || "NWFlix")}</h2><p>${esc(c.annMessage)}</p>
     ${link ? `<a id="ab" class="btn" href="${esc(c.annButtonUrl)}" target="_blank" rel="noopener">${esc(c.annButtonText)}</a>` : ""}
     ${c.annDismissible || !link ? `<button id="ac" class="btn ghost">${link ? "Later" : "OK"}</button>` : ""}</div>`;
-  const close = () => { localStorage.setItem("nwios_ann", c.annId); applyRemote(Object.assign({}, c, { annId: "" })); };
+  const close = () => { put("nwios_ann", c.annId); applyRemote(Object.assign({}, c, { annId: "" })); };
   const ac = document.getElementById("ac"); if (ac) ac.onclick = close;
   const ab = document.getElementById("ab"); if (ab) ab.onclick = () => setTimeout(close, 300);
 }
@@ -181,7 +184,7 @@ function offlineView() {
 const isKey = (k) => /^[ts]\d+$/.test(k);
 
 function touchSync() {
-  localStorage.setItem("nwios_syncT", String(Date.now()));
+  put("nwios_syncT", String(Date.now()));
   clearTimeout(syncTimer);
   syncTimer = setTimeout(pushSync, 5000);
 }
@@ -203,13 +206,14 @@ async function syncPull() {
       ud.wl = mix(ud.wl, r.wl || []);
       ud.fav = mix(ud.fav, r.fav || []);
       ud.seen = Object.fromEntries((r.seen || []).map((k) => [k, 1]));
-      pos = r.pos || {};
+      Object.keys(pos).forEach((k) => delete pos[k]);
+      Object.assign(pos, r.pos || {});
       Object.keys(wt).forEach((k) => delete wt[k]);
       Object.assign(wt, r.time || {});
-      localStorage.setItem("nwios_user", JSON.stringify(ud));
-      localStorage.setItem(POS, JSON.stringify(pos));
-      localStorage.setItem("nwios_time", JSON.stringify(wt));
-      localStorage.setItem("nwios_syncT", String(r.t));
+      put("nwios_user", JSON.stringify(ud));
+      put(POS, JSON.stringify(pos));
+      put("nwios_time", JSON.stringify(wt));
+      put("nwios_syncT", String(r.t));
       if (document.getElementById("scan")) home();
     } else if (local > (r ? r.t : 0)) pushSync();
   } catch (e) {}
@@ -239,18 +243,19 @@ async function boot() {
   if (!library.length) rescan(); else { enrichAll(); rescan({ quiet: true }); }
 }
 
-const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.getItem("nwios_user") || "{}"));
-const saveUd = () => { localStorage.setItem("nwios_user", JSON.stringify(ud)); touchSync(); };
+const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, jp("nwios_user", {}));
+const saveUd = () => { put("nwios_user", JSON.stringify(ud)); touchSync(); };
 let scanNote = "";
 let userName = "";
-let cursor = JSON.parse(localStorage.getItem("nwios_cur") || "{}");
+let cursor = jp("nwios_cur", {});
 let scanning = false, homeY = 0, restoreY = null, syncTimer = 0;
-const wt = JSON.parse(localStorage.getItem("nwios_time") || "{}");
+const wt = jp("nwios_time", {});
 let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "";
 
 const ICONS = {
   all: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/></svg>',
   wl: '<svg viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>',
+  lib: '<svg viewBox="0 0 24 24"><path d="M5 4h4v16H5zM11 4h4v16h-4zM17.5 5l3.5 1-3.5 14-3.5-1z"/></svg>',
   fav: '<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.8-8 11-8 11z"/></svg>'
 };
 
@@ -295,6 +300,25 @@ function select(id, label, opts, cur) {
   return `<select id="${id}"><option value="">${label}</option>${opts.map((o) => `<option ${o === cur ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
 }
 
+const tabsHtml = (on) => `<nav class="tabs">${[["all", "Home"], ["lib", "Library"]].map(([k, n]) => `<button data-t="${k}" class="${k === on ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`;
+const bindTabs = () => document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => (b.dataset.t === "lib" ? libraryView() : home())));
+let libTab = "wl";
+
+function libraryView() {
+  const all = groups();
+  const sets = { wl: all.filter((g) => ud.wl[g.key]), fav: all.filter((g) => ud.fav[g.key]), hist: all.filter((g) => watched(g) || started(g)) };
+  const info = { wl: ["Your watchlist is empty", "Open a movie and tap Add to watchlist."], fav: ["No favorites yet", "Tap Favorite on a movie page to keep it here."], hist: ["Nothing watched yet", "Movies you start will show up here."] };
+  const list = sets[libTab].slice().sort(libTab === "hist" ? (a, b) => percent(b) - percent(a) : SORTS.added);
+  view(`<header class="bar"><b>Library</b><span></span></header>
+    <div class="seg">${[["wl", "Watchlist"], ["fav", "Favorites"], ["hist", "History"]].map(([k, n]) => `<button data-s="${k}" class="${k === libTab ? "on" : ""}">${n} <small>${sets[k].length}</small></button>`).join("")}</div>
+    <main class="grid">${list.map((g) => cardHtml(g, libTab === "hist")).join("")}</main>
+    ${list.length ? "" : `<div class="empty"><b>${info[libTab][0]}</b><p class="muted center">${info[libTab][1]}</p></div>`}
+    ${tabsHtml("lib")}`);
+  document.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => { libTab = b.dataset.s; libraryView(); }));
+  document.querySelectorAll(".card").forEach((c) => (c.onclick = () => detail(byKey(c.dataset.k), libraryView)));
+  bindTabs();
+}
+
 function home(q = "") {
   const all = groups();
   const hide = settings.hide && tmdb.hasKey();
@@ -313,7 +337,7 @@ function home(q = "") {
   const genres = [...new Set(all.flatMap((g) => (g.v.genres || "").split(", ").filter(Boolean)))].sort();
   const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((t) => !QUALITIES.includes(t) && t !== "HEVC").sort();
   const cont = tab === "all" && !q && !fGenre && !fLang && !fQual ? list.filter(started) : [];
-  const names = { all: "Home", wl: "Watchlist", fav: "Favorites" };
+  const names = {};
   view(`<header class="bar"><span class="brand"><img src="icon.png" alt="">NWFlix iOS</span><div><button id="scan" class="ico">Rescan</button><button id="set" class="ico">Settings</button></div></header>
     <div class="search"><input id="q" type="search" placeholder="Search movies or cast" value="${esc(q)}"></div>
     <div class="filters">
@@ -325,7 +349,7 @@ function home(q = "") {
     ${cont.length ? `<h3 class="sec">Continue watching</h3><div class="row">${cont.map((g) => cardHtml(g, true)).join("")}</div>` : ""}
     <main class="grid">${list.map((g) => cardHtml(g, false)).join("")}</main>
     ${list.length ? "" : `<p class="muted center">${tab === "all" ? "No movies yet. Tap Rescan." : "Nothing here yet."}</p>`}
-    <nav class="tabs">${Object.entries(names).map(([k, n]) => `<button data-t="${k}" class="${k === tab ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`);
+    ${tabsHtml("all")}`);
   const qi = document.getElementById("q");
   qi.oninput = () => { const v = qi.value; home(v); const n = document.getElementById("q"); n.focus(); n.setSelectionRange(v.length, v.length); };
   document.getElementById("scan").onclick = rescan;
@@ -337,7 +361,7 @@ function home(q = "") {
   document.getElementById("fl").onchange = (e) => { fLang = e.target.value; home(q); };
   document.getElementById("fq").onchange = (e) => { fQual = e.target.value; home(q); };
   document.getElementById("ft").onchange = (e) => { fType = e.target.value; home(q); };
-  document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => { tab = b.dataset.t; home(); }));
+  bindTabs();
   document.querySelectorAll(".card").forEach((c) => (c.onclick = () => { homeY = window.scrollY; detail(byKey(c.dataset.k), () => { restoreY = homeY; home(q); }); }));
   if (restoreY !== null) { window.scrollTo(0, restoreY); restoreY = null; }
 }
@@ -367,7 +391,7 @@ function detail(g, back) {
   document.getElementById("sn").onclick = () => {
     const on = !watched(g);
     g.files.forEach((f) => { if (on) ud.seen[f.id] = 1; else { delete ud.seen[f.id]; pos[f.id] = 0; } });
-    saveUd(); localStorage.setItem(POS, JSON.stringify(pos)); again();
+    saveUd(); put(POS, JSON.stringify(pos)); again();
   };
   document.querySelectorAll(".file").forEach((b) => (b.onclick = () => play(files[Number(b.dataset.i)], again)));
   document.querySelectorAll(".chip").forEach((b) => (b.onclick = () => person(b.dataset.p, again)));
@@ -443,7 +467,7 @@ function fix(g, back) {
       try {
         const d = await tmdb.details(Number(b.dataset.id));
         g.files.forEach((f) => Object.assign(f, d, { tried: Date.now() }));
-        localStorage.setItem(LIB, JSON.stringify(library));
+        put(LIB, JSON.stringify(library));
         const ng = groups().find((x) => x.files.some((f) => f.id === g.files[0].id));
         detail(ng, back);
       } catch (e) { b.textContent = "Could not apply, try again"; }
@@ -455,7 +479,7 @@ async function rescan(opts) {
   const o = opts && (opts.full || opts.quiet) ? opts : {};
   if (scanning) return;
   scanning = true;
-  if (o.full) { cursor = {}; library = []; localStorage.setItem(LIB, "[]"); }
+  if (o.full) { cursor = {}; library = []; put(LIB, "[]"); }
   const status = (t) => { const e = document.getElementById("status"); if (e && !o.quiet) e.textContent = t; };
   status(library.length ? "Checking for new movies…" : "Scanning your Telegram chats…");
   let added = 0;
@@ -465,8 +489,8 @@ async function rescan(opts) {
     const fresh = res.items.filter((m) => !have.has(m.id));
     added = fresh.length;
     library = library.concat(fresh);
-    localStorage.setItem(LIB, JSON.stringify(library));
-    localStorage.setItem("nwios_cur", JSON.stringify(cursor));
+    put(LIB, JSON.stringify(library));
+    put("nwios_cur", JSON.stringify(cursor));
     scanNote = library.length ? "" : "Checked " + res.chats + " chats · " + res.docs + " files seen · " + res.passed + " passed the movie check" + (res.errors ? " · " + res.errors + " chats unreadable (" + res.firstErr + ")" : "");
   } catch (e) { if (!o.quiet) scanNote = "Scan failed: " + (e.message || e); }
   scanning = false;
@@ -477,7 +501,7 @@ async function rescan(opts) {
 
 async function enrichAll() {
   if (!tmdb.hasKey()) return;
-  const store = () => localStorage.setItem(LIB, JSON.stringify(library));
+  const store = () => put(LIB, JSON.stringify(library));
   await tmdb.enrich(library, (n, t) => { const e = document.getElementById("status"); if (e) e.textContent = "Fetching movie details… " + n + "/" + t; }, store);
   if (document.getElementById("status")) home();
 }
@@ -486,9 +510,9 @@ function play(m, back, next) {
   const g = groups().find((x) => x.files.some((f) => f.id === m.id));
   player.play({
     m, label: esc(g ? title(g.v) : m.title), title: g ? title(g.v) : m.title, poster: g && g.v.poster ? tmdb.img(g.v.poster) : "", settings, pos, view, back,
-    save: () => { save(); localStorage.setItem(POS, JSON.stringify(pos)); touchSync(); },
+    save: () => { save(); put(POS, JSON.stringify(pos)); touchSync(); },
     next, onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); },
-    onWatch: (s) => { const d = new Date().toISOString().slice(0, 10); wt[d] = Math.round((wt[d] || 0) + s); localStorage.setItem("nwios_time", JSON.stringify(wt)); touchSync(); }
+    onWatch: (s) => { const d = new Date().toISOString().slice(0, 10); wt[d] = Math.round((wt[d] || 0) + s); put("nwios_time", JSON.stringify(wt)); touchSync(); }
   });
 }
 
@@ -516,7 +540,7 @@ const SECTIONS = [
   ["About", [["about", "About NWFlix iOS", "Developer, credits and contact"]]]
 ];
 const srow = (k, t, s) => `<button class="srow" data-k="${k}"><span class="sico"><svg viewBox="0 0 24 24"><path d="${SI[k]}"/></svg></span><span class="stx"><b>${t}</b><small>${s}</small></span><i class="chev">›</i></button>`;
-const sw = (id, label, on) => `<label class="sw">${label}<input id="${id}" type="checkbox" ${on ? "checked" : ""}></label>`;
+const sw = (id, label, on) => `<label class="sw">${label}<input id="${id}" class="tgl" type="checkbox" ${on ? "checked" : ""}></label>`;
 const sel = (id, label, opts, cur) => `<label class="sw">${label}<select id="${id}">${opts.map((n) => `<option ${String(n) === String(cur) ? "selected" : ""}>${n}</option>`).join("")}</select></label>`;
 const page = (t, body, backFn) => {
   view(`<header class="bar"><button id="b" class="ico">Back</button><b>${t}</b><span></span></header><div class="list">${body}</div>`);
@@ -578,7 +602,7 @@ function settingsPage(k) {
     page("Library", `${sw("h", "Hide movies without details", settings.hide)}
       <button id="clr" class="btn ghost">Clear watch history</button><button id="rst" class="btn ghost">Clear library and rescan</button>`, back);
     flag("h", "hide");
-    $("clr").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("clr").textContent = "History cleared"; };
+    $("clr").onclick = () => { pos = {}; ud.seen = {}; put(POS, "{}"); saveUd(); $("clr").textContent = "History cleared"; };
     $("rst").onclick = () => { rescan({ full: true }); };
   } else if (k === "stats") {
     const gs = groups();
@@ -587,7 +611,7 @@ function settingsPage(k) {
       ${cell(gs.filter(watched).length, "Watched")}${cell(gs.filter(started).length, "In progress")}${cell(Object.keys(ud.wl).filter((x) => ud.wl[x]).length, "Watchlist")}${cell(Object.keys(ud.fav).filter((x) => ud.fav[x]).length, "Favorites")}</div>${watchTime()}`, back);
   } else if (k === "appearance") {
     const cols = ["#B88CFF", "#4FC3F7", "#81C784", "#FFB74D", "#F06292"];
-    page("Appearance", `<p class="muted nopad">Accent colour</p><div class="swatches">${cols.map((c) => `<button class="swatch ${c === settings.accent ? "on" : ""}" data-c="${c}" style="background:${c}"></button>`).join("")}</div>${sel("tx", "Text size", [15, 16, 17, 18, 20], settings.text)}`, back);
+    page("Appearance", `<p class="muted nopad">Accent colour</p><div class="swatches">${cols.map((c) => `<button class="swatch ${c === settings.accent ? "on" : ""}" data-c="${c}" style="background:${c}"></button>`).join("")}</div>${sel("tx", "Text size", [14, 15, 16, 17, 18], settings.text)}`, back);
     document.querySelectorAll(".swatch").forEach((b) => (b.onclick = () => { settings.accent = b.dataset.c; save(); applyTheme(); settingsPage("appearance"); }));
     $("tx").onchange = (e) => { settings.text = Number(e.target.value); save(); applyTheme(); };
   } else if (k === "network") {
@@ -598,9 +622,9 @@ function settingsPage(k) {
     const kb = (key) => Math.round((localStorage.getItem(key) || "").length / 1024) + " KB";
     page("Storage & Cache", `<div class="sgroup">${[["Library and movie details", LIB], ["Watch progress", POS], ["Lists and watched marks", "nwios_user"], ["Watch time", "nwios_time"]].map(([t, key]) => `<div class="srow"><span class="stx"><b>${t}</b></span><small>${kb(key)}</small></div>`).join("")}</div>
       <button id="cd" class="btn ghost">Clear saved movie details</button><button id="cl" class="btn ghost">Clear library cache</button><button id="ch" class="btn ghost">Clear watch history</button>`, back);
-    $("cd").onclick = () => { library.forEach((m) => ["tmdb", "series", "name", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x])); localStorage.setItem(LIB, JSON.stringify(library)); home(); enrichAll(); };
+    $("cd").onclick = () => { library.forEach((m) => ["tmdb", "series", "name", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x])); put(LIB, JSON.stringify(library)); home(); enrichAll(); };
     $("cl").onclick = () => { rescan({ full: true }); };
-    $("ch").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("ch").textContent = "History cleared"; };
+    $("ch").onclick = () => { pos = {}; ud.seen = {}; put(POS, "{}"); saveUd(); $("ch").textContent = "History cleared"; };
   } else if (k === "help") {
     page("Help & Support", `<div class="sgroup">
       <button class="srow" id="h1"><span class="stx"><b>Where to find the login code</b><small>English and മലയാളം</small></span><i class="chev">›</i></button>
