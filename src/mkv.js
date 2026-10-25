@@ -58,12 +58,14 @@ async function openFile(item) {
     } else if (k.id === 0x1654AE6B) {
       for (const te of kids(head, k.ds, k.end)) {
         if (te.id !== 0xAE) continue;
-        const t = { num: 0, type: 0, codec: "", priv: null, w: 0, h: 0, rate: 48000, ch: 2 };
+        const t = { num: 0, type: 0, codec: "", priv: null, w: 0, h: 0, rate: 48000, ch: 2, name: "", lang: "" };
         for (const x of kids(head, te.ds, te.end)) {
           if (x.id === 0xD7) t.num = uint(head, x.ds, x.end - x.ds);
           if (x.id === 0x83) t.type = uint(head, x.ds, x.end - x.ds);
           if (x.id === 0x86) t.codec = String.fromCharCode(...head.subarray(x.ds, x.end));
           if (x.id === 0x63A2) t.priv = head.slice(x.ds, x.end);
+          if (x.id === 0x536E) t.name = new TextDecoder().decode(head.subarray(x.ds, x.end));
+          if (x.id === 0x22B59C) t.lang = String.fromCharCode(...head.subarray(x.ds, x.end));
           if (x.id === 0xE0) for (const y of kids(head, x.ds, x.end)) { if (y.id === 0xB0) t.w = uint(head, y.ds, y.end - y.ds); if (y.id === 0xBA) t.h = uint(head, y.ds, y.end - y.ds); }
           if (x.id === 0xE1) for (const y of kids(head, x.ds, x.end)) { if (y.id === 0xB5) t.rate = Math.round(flt(head, y.ds, y.end - y.ds)); if (y.id === 0x9F) t.ch = uint(head, y.ds, y.end - y.ds); }
         }
@@ -115,16 +117,16 @@ function frames(c, scale) {
   let tc = 0;
   for (const k of kids(c, 0, c.length)) {
     if (k.id === 0xE7) tc = uint(c, k.ds, k.end - k.ds);
-    let b = null, key = true;
+    let b = null, key = true, bd = 0;
     if (k.id === 0xA3) b = k;
-    if (k.id === 0xA0) for (const x of kids(c, k.ds, k.end)) { if (x.id === 0xA1) b = x; if (x.id === 0xFB) key = false; }
+    if (k.id === 0xA0) for (const x of kids(c, k.ds, k.end)) { if (x.id === 0xA1) b = x; if (x.id === 0xFB) key = false; if (x.id === 0x9B) bd = uint(c, x.ds, x.end - x.ds); }
     if (!b) continue;
     const [tn, tl] = rsz(c, b.ds);
     const rel = (c[b.ds + tl] << 8) | c[b.ds + tl + 1];
     const flags = c[b.ds + tl + 2];
     if ((flags >> 1) & 3) continue;
     if (k.id === 0xA3) key = !!(flags & 0x80);
-    out.push({ tn, ms: ((tc + (rel > 32767 ? rel - 65536 : rel)) * scale) / 1e6, key, data: c.subarray(b.ds + tl + 3, b.end) });
+    out.push({ tn, ms: ((tc + (rel > 32767 ? rel - 65536 : rel)) * scale) / 1e6, key, dur: (bd * scale) / 1e6, data: c.subarray(b.ds + tl + 3, b.end) });
   }
   return out;
 }
@@ -149,6 +151,23 @@ function ac3Info(d) {
   return [(fscod << 6) | (bsid << 1) | (bsmod >> 2), ((bsmod & 3) << 6) | (acmod << 3) | (lfe << 2) | (frm >> 4), ((frm >> 1) & 31) << 3];
 }
 
+function eac3Info(d) {
+  let o = 0;
+  while (o < d.length - 8 && !(d[o] === 0x0B && d[o + 1] === 0x77)) o++;
+  const bits = [];
+  for (let i = o + 2; i < o + 10; i++) for (let j = 7; j >= 0; j--) bits.push((d[i] >> j) & 1);
+  let p = 0;
+  const rd = (n) => { let v = 0; while (n--) v = (v << 1) | bits[p++]; return v; };
+  rd(2); rd(3);
+  const frm = rd(11), fscod = rd(2);
+  let blocks = 6;
+  if (fscod === 3) rd(2); else blocks = [1, 2, 3, 6][rd(2)];
+  const acmod = rd(3), lfe = rd(1), bsid = rd(5);
+  const fs = [48000, 44100, 32000, 24000][fscod];
+  const rate = Math.round(((frm + 1) * 16 * fs) / (blocks * 256) / 1000);
+  return [rate >> 5, (rate & 31) << 3, ((fscod & 3) << 6) | (bsid << 1), (acmod << 1) | lfe, 0];
+}
+
 const hex = (n) => n.toString(16).padStart(2, "0");
 function hevcStr(c) {
   const comp = ((c[2] << 24) | (c[3] << 16) | (c[4] << 8) | c[5]) >>> 0;
@@ -166,7 +185,8 @@ function initSegment(v, a, ac3hdr) {
     if (a.codec === "A_AAC") {
       const asc = [...a.priv];
       ae = box("mp4a", ...head, full("esds", 0, 0, [3, 23 + asc.length, 0, 1, 0, 4, 15 + asc.length, 0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, asc.length], asc, [6, 1, 2]));
-    } else ae = box("ac-3", ...head, box("dac3", ac3Info(ac3hdr)));
+    } else if (a.codec === "A_EAC3") ae = box("ec-3", ...head, box("dec3", eac3Info(ac3hdr)));
+    else ae = box("ac-3", ...head, box("dac3", ac3Info(ac3hdr)));
   }
   const trak = (id, type, entry, w, h, ts) => box("trak",
     full("tkhd", 0, 7, u32(0), u32(0), u32(id), u32(0), u32(0), z(8), u16(0), u16(0), u16(type === "soun" ? 0x100 : 0), u16(0), [0, 1, 0, 0, ...z(12), 0, 1, 0, 0, ...z(12), 0x40, 0, 0, 0], u32(w << 16), u32(h << 16)),
@@ -211,33 +231,63 @@ function fragment(fr, vt, at, seq, ac) {
   return parts.length ? moof(seq, parts) : null;
 }
 
-export async function attach(video, item) {
+const AUDIO_OK = (t) => t.type === 2 && (t.codec === "A_AAC" ? !!t.priv : t.codec === "A_AC3" || t.codec === "A_EAC3");
+const nameOf = (t, i) => t.name || t.lang || "Track " + (i + 1);
+const textOf = (t, data) => {
+  let s = new TextDecoder().decode(data);
+  if (t.codec.includes("ASS") || t.codec.includes("SSA")) s = s.split(",").slice(8).join(",");
+  return s.replace(/\{[^}]*\}/g, "").replace(/\\N/gi, "\n").replace(/<[^>]+>/g, "").trim();
+};
+
+export async function attach(video, item, hooks = {}) {
   const MS = window.ManagedMediaSource || window.MediaSource;
   if (!MS) throw new Error("This iPhone is too old to play MKV files. Update iOS.");
   const f = await openFile(item);
   const vt = f.tracks.find((t) => t.type === 1 && (t.codec.includes("AVC") || t.codec.includes("HEVC")));
   if (!vt || !vt.priv) throw new Error("This MKV uses a video format iPhones cannot play.");
-  const at = f.tracks.find((t) => t.type === 2 && (t.codec === "A_AAC" || t.codec === "A_AC3") && (t.codec !== "A_AAC" || t.priv)) || null;
-  const probe = { stop: false };
-  let ac3hdr = null;
-  if (at && at.codec === "A_AC3") for await (const c of clusters(item, f.first, probe)) { const x = frames(c, f.scale).find((y) => y.tn === at.num); ac3hdr = x && x.data; break; }
+  const audios = f.tracks.filter(AUDIO_OK);
+  const subTracks = f.tracks.filter((t) => t.type === 17 && t.codec.startsWith("S_TEXT/"));
+  const subNums = new Map(subTracks.map((t) => [t.num, t]));
   const vcodec = vt.codec.includes("HEVC") ? hevcStr(vt.priv) : "avc1." + hex(vt.priv[1]) + hex(vt.priv[2]) + hex(vt.priv[3]);
-  const acodec = at ? (at.codec === "A_AAC" ? "mp4a.40." + (at.priv[0] >> 3) : "ac-3") : "";
-  const mime = 'video/mp4; codecs="' + vcodec + (acodec ? "," + acodec : "") + '"';
-  if (!MS.isTypeSupported(mime)) throw new Error("This iPhone cannot play this MKV (" + vcodec + ").");
-  const init = initSegment(vt, at, ac3hdr);
+  const mimeOf = (a) => 'video/mp4; codecs="' + vcodec + (a ? "," + (a.codec === "A_AAC" ? "mp4a.40." + (a.priv[0] >> 3) : a.codec === "A_AC3" ? "ac-3" : "ec-3") : "") + '"';
+  const header = async (a) => {
+    if (!a || a.codec === "A_AAC") return null;
+    for await (const c of clusters(item, f.first, { stop: false })) { const x = frames(c, f.scale).find((y) => y.tn === a.num); return x ? x.data : null; }
+    return null;
+  };
+  const prepare = async (a) => {
+    const h = await header(a);
+    if (a && a.codec !== "A_AAC" && !h) a = null;
+    if (a && !MS.isTypeSupported(mimeOf(a))) a = null;
+    return { a, mime: mimeOf(a), init: initSegment(vt, a, h) };
+  };
+  let cur = await prepare(audios[0] || null);
+  if (!MS.isTypeSupported(cur.mime)) throw new Error("This iPhone cannot play this MKV (" + vcodec + ").");
   const ms = new MS();
   video.disableRemotePlayback = true;
   video.src = URL.createObjectURL(ms);
   await new Promise((r) => ms.addEventListener("sourceopen", r, { once: true }));
   if (f.seconds) ms.duration = f.seconds;
-  const sb = ms.addSourceBuffer(mime);
+  const sb = ms.addSourceBuffer(cur.mime);
   const idle = () => (sb.updating ? new Promise((r) => sb.addEventListener("updateend", r, { once: true })) : null);
   const append = async (d) => { await idle(); sb.appendBuffer(d); await idle(); await new Promise((r) => setTimeout(r, 0)); };
   const clear = async (a, b) => { await idle(); if (sb.buffered.length) { sb.remove(a, b); await idle(); } };
   const sleep = (n) => new Promise((r) => setTimeout(r, n));
   const ahead = () => { for (let i = 0; i < sb.buffered.length; i++) if (video.currentTime >= sb.buffered.start(i) - 0.3 && video.currentTime <= sb.buffered.end(i)) return sb.buffered.end(i) - video.currentTime; return 0; };
   const has = (t) => { for (let i = 0; i < sb.buffered.length; i++) if (t >= sb.buffered.start(i) && t < sb.buffered.end(i)) return true; return false; };
+  const seen = new Set();
+  const cuesOf = (fl) => {
+    for (const x of fl) {
+      const t = subNums.get(x.tn);
+      if (!t) continue;
+      const k = x.tn + "|" + x.ms;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const text = textOf(t, x.data);
+      if (text && hooks.onCue) hooks.onCue(x.tn, { s: x.ms / 1000, e: (x.ms + (x.dur || 3000)) / 1000, t: text });
+    }
+  };
+  const nearest = (t) => { let best = f.first; for (const c of f.cues) if (c.t / 1000 <= t) best = c.pos; return best; };
   let tok = { stop: true }, seq = 1;
 
   const run = async (pos) => {
@@ -246,13 +296,15 @@ export async function attach(video, item) {
     await sleep(30);
     try { await idle(); sb.abort(); } catch (e) {}
     await clear(0, Infinity);
-    await append(init);
+    await append(cur.init);
     try {
       for await (const c of clusters(item, pos, my)) {
         if (my.stop) return;
-        const fr = fragment(frames(c, f.scale), vt, at, seq++);
+        const fl = frames(c, f.scale);
+        cuesOf(fl);
+        const fr = fragment(fl, vt, cur.a, seq++);
         if (fr) await append(fr);
-        while (!my.stop && ahead() > 40) {
+        while (!my.stop && ahead() > (hooks.buffer ? hooks.buffer() : 40)) {
           await sleep(500);
           if (video.currentTime > 60 && sb.buffered.length && sb.buffered.start(0) < video.currentTime - 60) await clear(0, video.currentTime - 30);
         }
@@ -261,13 +313,21 @@ export async function attach(video, item) {
     } catch (e) { if (!my.stop) video.dispatchEvent(new Event("error")); }
   };
 
-  video.addEventListener("seeking", () => {
-    const t = video.currentTime;
-    if (has(t)) return;
-    let best = f.first;
-    for (const c of f.cues) if (c.t / 1000 <= t) best = c.pos;
-    run(best);
-  });
+  video.addEventListener("seeking", () => { if (!has(video.currentTime)) run(nearest(video.currentTime)); });
   run(f.first);
-  return { note: at || !f.tracks.some((t) => t.type === 2) ? "" : "This file's audio format isn't supported, so it plays without sound.", destroy() { tok.stop = true; } };
+  return {
+    audios: audios.map((t, i) => ({ i, label: nameOf(t, i) + " · " + t.codec.replace("A_", "") + " " + (t.ch > 2 ? t.ch - 1 + ".1" : t.ch + "ch") })),
+    subs: subTracks.map((t, i) => ({ num: t.num, label: nameOf(t, i) + " (embedded)" })),
+    activeAudio: () => audios.indexOf(cur.a),
+    async setAudio(i) {
+      const next = await prepare(audios[i]);
+      if (!next.a) return false;
+      cur = next;
+      try { sb.changeType(cur.mime); } catch (e) {}
+      run(nearest(video.currentTime));
+      return true;
+    },
+    note: cur.a || !f.tracks.some((t) => t.type === 2) ? "" : "This file's audio format isn't supported, so it plays without sound.",
+    destroy() { tok.stop = true; }
+  };
 }
