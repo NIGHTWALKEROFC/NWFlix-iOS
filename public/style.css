@@ -242,3 +242,54 @@ html, body { font-size: 17px; background: radial-gradient(900px 420px at 50% -12
 #ptr { position: fixed; top: -50px; left: 50%; transform: translate(-50%, 0); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px; font-size: 14px; z-index: 30; pointer-events: none; transition: transform .15s; }
 .toast { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); background: #2A2B3A; border: 1px solid var(--line); border-radius: 999px; padding: 12px 22px; z-index: 80; animation: pop .3s both; }
 .nowifi { width: 72px; height: 72px; fill: none; stroke: var(--mut); stroke-width: 1.6; stroke-linecap: round; }
+
+.stx b { font-size: 15px; }
+.stx small, .profile small { font-size: 12px; }
+.sw, .list label { font-size: 15px; padding: 13px 0; }
+.list select { font-size: 14px; padding: 6px 10px; }
+.grp { font-size: 12px; margin: 20px 18px 6px; }
+.profile b { font-size: 18px; }
+.avatar { width: 52px; height: 52px; font-size: 22px; }
+.sico { width: 36px; height: 36px; }
+.sico svg { width: 20px; height: 20px; }
+.srow { padding: 12px 14px; }
+.list .btn { font-size: 15px; padding: 13px; }
+.stat b { font-size: 24px; }
+.stat small, .list .muted, .ver { font-size: 12px; }
+.tgl { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 999px; background: #2A2B3A; position: relative; transition: background .2s; flex: none; }
+.tgl::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.tgl:checked { background: var(--acc); }
+.tgl:checked::after { transform: translateX(18px); }
+.sw input[type=checkbox] { width: 46px; height: 28px; }
+.seg { display: flex; gap: 8px; padding: 4px 18px 14px; overflow-x: auto; }
+.seg button { flex: none; background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 10px 18px; color: var(--text); font-size: 15px; }
+.seg button.on { background: var(--acc); color: #010314; border-color: var(--acc); font-weight: 600; }
+.seg small { opacity: .7; margin-left: 4px; }
+.empty { text-align: center; padding: 60px 24px; }
+.empty b { font-size: 18px; }
+.pmenu { right: 12px; bottom: 84px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 110px); overflow-y: auto; -webkit-overflow-scrolling: touch; background: #12131ff2; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--line); border-radius: 22px; padding: 0 0 6px; gap: 0; z-index: 5; display: flex; flex-direction: column; }
+.pmenu.hidden { display: none; }
+.mh { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; position: sticky; top: 0; background: #12131ff2; border-bottom: 1px solid var(--line); font-size: 16px; z-index: 2; }
+.mh .ico { margin: 0; }
+.ms { padding: 10px 16px; border-bottom: 1px solid #2A2B3A; }
+.ms:last-child { border-bottom: 0; }
+.ms h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: .8px; text-transform: uppercase; color: var(--acc); }
+.ms label, .pmenu .mrow { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 15px; gap: 12px; }
+.rng { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: flex-end; }
+.pmenu .rng input[type=range] { width: 100%; max-width: 160px; }
+.rng output { min-width: 44px; text-align: right; color: var(--mut); font-size: 13px; }
+.pmenu select { background: #2A2B3A; border: 0; border-radius: 999px; padding: 7px 12px; color: var(--text); font-size: 14px; }
+.pmenu .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.pmenu .two button, .pmenu .full { background: #2A2B3A; border: 0; border-radius: 12px; padding: 11px; color: var(--text); font-size: 14px; width: 100%; }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button { background: #2A2B3A; border: 0; border-radius: 999px; padding: 6px 12px; color: var(--text); }
+.dim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+.player.land { top: 0; left: 0; right: auto; bottom: auto; inset: auto; position: fixed; width: 100vh; height: 100vw; transform: rotate(90deg) translateY(-100%); transform-origin: top left; }
+.ptop .ico { padding: 8px 12px; font-size: 14px; }
+@media (orientation: landscape) {
+  .pmenu { top: 10px; bottom: 10px; right: max(10px, env(safe-area-inset-right)); max-height: none; width: 340px; }
+  .pui { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .big { width: 58px; height: 58px; }
+  .hero { height: 200px; }
+  .login { min-height: auto; padding: 20px; }
+}
