@@ -203,3 +203,27 @@ html, body { font-size: 17px; background: radial-gradient(900px 420px at 50% -12
 .gh { color: var(--acc); font-weight: 600; margin: 18px 0 4px; font-size: 18px; }
 .gcard { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 10px 18px; display: flex; flex-direction: column; gap: 6px; }
 .gcard .muted { padding: 0; }
+
+.profile { display: flex; align-items: center; gap: 16px; padding: 8px 18px 14px; }
+.profile div:last-child { display: flex; flex-direction: column; gap: 2px; }
+.profile b { font-size: 20px; }
+.profile small, .stx small { color: var(--mut); font-size: 13px; }
+.avatar { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #6633EE, #B88CFF); display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; color: #fff; }
+.grp { margin: 22px 18px 8px; font-size: 13px; letter-spacing: .8px; text-transform: uppercase; color: var(--acc); }
+.sgroup { margin: 0 14px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+.srow { width: 100%; display: flex; align-items: center; gap: 14px; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 14px 16px; text-align: left; }
+.srow:last-child { border-bottom: 0; }
+.srow:active { background: #ffffff0d; }
+.sico { width: 40px; height: 40px; border-radius: 12px; background: #B88CFF24; display: flex; align-items: center; justify-content: center; flex: none; }
+.sico svg { width: 22px; height: 22px; fill: none; stroke: var(--acc); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.stx { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.stx b { font-weight: 500; font-size: 16px; }
+.chev { color: var(--mut); font-size: 26px; font-style: normal; }
+.ver { padding: 24px 0 40px; }
+.sw { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.sw input[type=checkbox] { width: 22px; height: 22px; }
+.list .btn { max-width: none; margin-top: 12px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 8px; text-align: center; display: flex; flex-direction: column; gap: 4px; }
+.stat b { font-size: 28px; color: var(--acc); }
+.stat small { color: var(--mut); }
