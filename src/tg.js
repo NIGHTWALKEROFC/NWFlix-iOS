@@ -14,6 +14,7 @@ export const hasKeys = () => API_ID > 0 && API_HASH.length > 0;
 export const hasSession = () => !!localStorage.getItem(SESSION_KEY);
 
 async function connect() {
+  if (client) { try { await client.disconnect(); } catch (e) {} }
   client = new TelegramClient(new StringSession(localStorage.getItem(SESSION_KEY) || ""), API_ID, API_HASH, {
     connectionRetries: 5,
     deviceModel: "NWFlix iOS",
