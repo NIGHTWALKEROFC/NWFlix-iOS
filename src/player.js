@@ -1,6 +1,7 @@
 import { streamUrl } from "./tg.js";
 import { attach } from "./mkv.js";
 
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
 const fmt = (s) => {
   s = Math.max(0, Math.floor(s || 0));
@@ -27,27 +28,31 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   view(`<div class="player" id="pl">
     <video id="v" playsinline autoplay preload="auto"></video>
     <div id="sub" class="sub"></div>
+    <div id="dim" class="dim"></div>
     <div id="gest" class="gest"></div>
     <p id="msg" class="pmsg">${risky ? "This is an MKV-style file. Safari may not play it." : ""}</p>
     <div class="pui">
-      <div class="ptop"><button id="back" class="ico">Back</button><span>${label}</span><button id="ft" class="ico">Fit</button><button id="mn" class="ico">More</button></div>
+      <div class="ptop"><button id="back" class="ico">Back</button><span>${label}</span><button id="rt" class="ico">Rotate</button><button id="ft" class="ico">Fit</button><button id="mn" class="ico">More</button></div>
       <div class="pmid"><button id="rw" class="big">-${settings.skip}</button><button id="pp" class="big">❚❚</button><button id="fw" class="big">+${settings.skip}</button></div>
       <div class="pbot"><span id="cur">0:00</span><input id="seek" type="range" min="0" max="1000" value="0"><span id="dur">0:00</span></div>
     </div>
     <div id="menu" class="pmenu hidden">
-      <label>Speed<select id="sp">${[0.5, 0.75, 1, 1.25, 1.5, 2].map((n) => `<option ${n === settings.speed ? "selected" : ""}>${n}</option>`).join("")}</select></label>
-      <label>Subtitle size<select id="ss">${[16, 20, 24, 28, 34].map((n) => `<option ${n === settings.subSize ? "selected" : ""}>${n}</option>`).join("")}</select></label>
-      <label>Subtitle background<input id="sb" type="checkbox" ${settings.subBg ? "checked" : ""}></label>
-      <div class="mrow">Subtitle delay<span><button id="dm">-0.5s</button> <b id="dv">0.0s</b> <button id="dp">+0.5s</button></span></div>
-      <button id="sf">Load subtitles (.srt or .vtt)</button><input id="sfile" type="file" accept=".srt,.vtt,text/plain" hidden>
-      <button id="so">Subtitles off</button>
-      <label id="alab" class="hidden">Audio track<select id="at"></select></label>
-      <label id="slab" class="hidden">Embedded subtitles<select id="es"></select></label>
-      <label>Volume<input id="vol" type="range" min="0" max="200" value="${Math.round(settings.vol * 100)}"></label>
-      <label>Brightness<input id="br" type="range" min="40" max="160" value="${Math.round(settings.bright * 100)}"></label>
-      <label>Sleep timer<select id="sl"><option value="0">Off</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="end">End of episode</option></select></label>
-      <button id="pip">Picture in picture</button>
-      <button id="mc" class="ghost">Close</button>
+      <div class="mh"><b>Player settings</b><button id="mc" class="ico">Done</button></div>
+      <div class="ms"><h4>Playback</h4>
+        <label>Speed<select id="sp">${[0.5, 0.75, 1, 1.25, 1.5, 2].map((n) => `<option ${n === settings.speed ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label>Sleep timer<select id="sl"><option value="0">Off</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="end">End of episode</option></select></label></div>
+      <div class="ms"><h4>Picture</h4>
+        <label>Brightness<span class="rng"><input id="br" type="range" min="15" max="180" value="${Math.round(settings.bright * 100)}"><output id="bv"></output></span></label></div>
+      <div class="ms"><h4>Sound</h4>
+        <label>Volume<span class="rng"><input id="vol" type="range" min="0" max="300" value="${Math.round(settings.vol * 100)}"><output id="vv"></output></span></label>
+        <label id="alab" class="hidden">Audio track<select id="at"></select></label></div>
+      <div class="ms"><h4>Subtitles</h4>
+        <label id="slab" class="hidden">Embedded<select id="es"></select></label>
+        <label>Size<select id="ss">${[16, 20, 24, 28, 34].map((n) => `<option ${n === settings.subSize ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label>Background<input id="sb" class="tgl" type="checkbox" ${settings.subBg ? "checked" : ""}></label>
+        <div class="mrow">Delay<span class="stepper"><button id="dm">-0.5s</button><b id="dv">0.0s</b><button id="dp">+0.5s</button></span></div>
+        <div class="two"><button id="sf">Load file</button><button id="so">Turn off</button></div><input id="sfile" type="file" accept=".srt,.vtt,text/plain" hidden></div>
+      <div class="ms"><button id="pip" class="full">Picture in picture</button></div>
     </div></div>`);
   const $ = (id) => document.getElementById(id);
   const v = $("v"), pl = $("pl"), menu = $("menu"), sub = $("sub");
@@ -61,11 +66,11 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
       $("msg").textContent = c.note;
       if (c.audios.length > 1) {
         $("alab").classList.remove("hidden");
-        $("at").innerHTML = c.audios.map((a) => `<option value="${a.i}" ${a.i === c.activeAudio() ? "selected" : ""}>${a.label}</option>`).join("");
+        $("at").innerHTML = c.audios.map((a) => `<option value="${a.i}" ${a.i === c.activeAudio() ? "selected" : ""}>${esc(a.label)}</option>`).join("");
       }
       if (c.subs.length) {
         $("slab").classList.remove("hidden");
-        $("es").innerHTML = '<option value="0">Off</option>' + c.subs.map((s) => `<option value="${s.num}">${s.label}</option>`).join("");
+        $("es").innerHTML = '<option value="0">Off</option>' + c.subs.map((s) => `<option value="${s.num}">${esc(s.label)}</option>`).join("");
       }
     }).catch((e) => { $("msg").textContent = e.message; pl.classList.add("show"); });
   } else v.src = streamUrl(m);
@@ -74,25 +79,42 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   let actx = null, gain = null, acc = 0, lastT = 0, mode = "", ly = 0;
   const emb = {};
   const setVol = (x) => {
-    settings.vol = Math.max(0, Math.min(2, x));
+    settings.vol = Math.max(0, Math.min(3, x));
+    const vo = $("vv");
+    if (vo) vo.textContent = Math.round(settings.vol * 100) + "%";
     if (!actx && settings.vol === 1) return;
     if (!actx) {
       const A = window.AudioContext || window.webkitAudioContext;
       actx = new A();
       const src = actx.createMediaElementSource(v);
       gain = actx.createGain();
+      const comp = actx.createDynamicsCompressor();
+      comp.threshold.value = -14; comp.knee.value = 24; comp.ratio.value = 10; comp.attack.value = 0.003; comp.release.value = 0.2;
       src.connect(gain);
-      gain.connect(actx.destination);
+      gain.connect(comp);
+      comp.connect(actx.destination);
     }
     if (actx.state === "suspended") actx.resume();
     gain.gain.value = settings.vol;
   };
-  const setBright = (x) => { settings.bright = Math.max(0.4, Math.min(1.6, x)); v.style.filter = "brightness(" + settings.bright + ")"; };
+  const setBright = (x) => {
+    settings.bright = Math.max(0.15, Math.min(1.8, x));
+    const b = settings.bright;
+    $("dim").style.opacity = b < 1 ? String(Math.min(0.85, 1 - b)) : "0";
+    v.style.filter = b > 1 ? "brightness(" + b + ")" : "none";
+    const o = $("bv");
+    if (o) o.textContent = Math.round(b * 100) + "%";
+  };
   setBright(settings.bright);
   const FITS = [["contain", "Fit"], ["cover", "Fill"], ["fill", "Stretch"]];
   const setFit = (i) => { v.style.objectFit = FITS[i][0]; $("ft").textContent = FITS[i][1]; settings.fit = FITS[i][0]; };
   setFit(Math.max(0, FITS.findIndex((x) => x[0] === settings.fit)));
-  let sleepT = 0, sleepEnd = false;
+  let sleepT = 0, sleepEnd = false, land = false, wake = null;
+  const pt = (t) => (land ? { x: t.clientY, y: window.innerWidth - t.clientX } : { x: t.clientX, y: t.clientY });
+  const onResize = () => { if (land && window.innerWidth > window.innerHeight) { land = false; pl.classList.remove("land"); } };
+  addEventListener("resize", onResize);
+  const keepAwake = async () => { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } } catch (e) {} };
+  v.addEventListener("play", keepAwake);
   if (settings.vol !== 1) v.addEventListener("play", () => setVol(settings.vol), { once: true });
   const flash = (t) => { $("msg").textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { $("msg").textContent = ""; }, 900); };
   const show = () => {
@@ -111,7 +133,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     $("dur").textContent = fmt(v.duration);
     if (v.audioTracks && v.audioTracks.length > 1) {
       $("alab").classList.remove("hidden");
-      $("at").innerHTML = Array.from(v.audioTracks).map((t, i) => `<option value="${i}" ${t.enabled ? "selected" : ""}>${t.label || t.language || "Track " + (i + 1)}</option>`).join("");
+      $("at").innerHTML = Array.from(v.audioTracks).map((t, i) => `<option value="${i}" ${t.enabled ? "selected" : ""}>${esc(t.label || t.language || "Track " + (i + 1))}</option>`).join("");
     }
   });
   v.addEventListener("timeupdate", () => {
@@ -138,6 +160,16 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   }, 150);
 
   $("pp").onclick = () => (v.paused ? v.play() : v.pause());
+  $("rt").onclick = async () => {
+    const o = screen.orientation;
+    if (o && o.lock && pl.requestFullscreen) {
+      try { if (!document.fullscreenElement) await pl.requestFullscreen(); await o.lock(o.type.startsWith("landscape") ? "portrait" : "landscape"); return; } catch (e) {}
+    }
+    land = !land;
+    pl.classList.toggle("land", land);
+    flash(land ? "Landscape" : "Portrait");
+    show();
+  };
   $("ft").onclick = () => { const i = (FITS.findIndex((x) => x[0] === settings.fit) + 1) % FITS.length; setFit(i); flash(FITS[i][1]); save(); show(); };
   $("sl").onchange = (e) => {
     clearTimeout(sleepT);
@@ -182,23 +214,30 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     else if (v.requestPictureInPicture) v.requestPictureInPicture().catch(() => flash("Picture in picture is not available"));
     else flash("Picture in picture is not available");
   };
-  $("back").onclick = () => { clearTimeout(sleepT); if ("mediaSession" in navigator) navigator.mediaSession.metadata = null; if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
+  $("back").onclick = () => { clearTimeout(sleepT); if ("mediaSession" in navigator) navigator.mediaSession.metadata = null; if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause();
+    removeEventListener("resize", onResize);
+    if (wake) wake.release();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    try { screen.orientation.unlock(); } catch (e) {}
+    if ("mediaSession" in navigator) ["play", "pause", "seekbackward", "seekforward", "seekto", "nexttrack"].forEach((a) => { try { navigator.mediaSession.setActionHandler(a, null); } catch (e) {} });
+    if (v.src.startsWith("blob:")) URL.revokeObjectURL(v.src);
+    v.removeAttribute("src"); v.load(); back(); };
 
   const g = $("gest");
   let sx = 0, sy = 0, moved = false, drag = 0, lastTap = 0, tapT = 0;
-  g.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false; drag = 0; mode = ""; }, { passive: true });
+  g.addEventListener("touchstart", (e) => { const q0 = pt(e.touches[0]); sx = q0.x; sy = q0.y; moved = false; drag = 0; mode = ""; }, { passive: true });
   g.addEventListener("touchmove", (e) => {
     if (!settings.gestures) return;
-    const t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (!mode && (Math.abs(dx) > 25 || Math.abs(dy) > 25)) { mode = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; ly = t.clientY; }
+    const t = pt(e.touches[0]), dx = t.x - sx, dy = t.y - sy;
+    if (!mode && (Math.abs(dx) > 25 || Math.abs(dy) > 25)) { mode = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; ly = t.y; }
     if (mode === "h") {
       moved = true;
       drag = Math.round((dx / g.clientWidth) * 120);
       flash((drag >= 0 ? "+" : "") + drag + "s");
     } else if (mode === "v") {
       moved = true;
-      const d = ((ly - t.clientY) / g.clientHeight) * 1.2;
-      ly = t.clientY;
+      const d = ((ly - t.y) / g.clientHeight) * 1.2;
+      ly = t.y;
       if (sx < g.clientWidth / 2) { setBright(settings.bright + d); flash("Brightness " + Math.round(settings.bright * 100) + "%"); }
       else { setVol(settings.vol + d); flash("Volume " + Math.round(settings.vol * 100) + "%"); }
     }
