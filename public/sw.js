@@ -9,7 +9,8 @@ self.addEventListener("fetch", (e) => {
 
 async function serve(e, u) {
   const size = Number(u.searchParams.get("size"));
-  const mime = u.searchParams.get("mime") || "video/mp4";
+  const mt = u.searchParams.get("mime") || "";
+  const mime = /^video\/[a-z0-9.+-]+$/i.test(mt) ? mt : "video/mp4";
   const id = decodeURIComponent(u.pathname.split("/stream/")[1]);
   const m = /bytes=(\d+)-(\d*)/.exec(e.request.headers.get("range") || "");
   const start = m ? Number(m[1]) : 0;
@@ -37,7 +38,8 @@ async function serve(e, u) {
       "Content-Length": String(end - start + 1),
       "Content-Range": "bytes " + start + "-" + end + "/" + size,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
     }
   });
 }
