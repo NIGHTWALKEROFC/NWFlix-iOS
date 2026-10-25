@@ -22,7 +22,7 @@ function parseSubs(text) {
   }).filter(Boolean);
 }
 
-export function play({ m, label, settings, pos, save, view, back, onSeen, onWatch, next }) {
+export function play({ m, label, settings, pos, save, view, back, onSeen, onWatch, next, title, poster }) {
   const risky = /\.(avi|wmv|flv|ts)$/i.test(m.name);
   view(`<div class="player" id="pl">
     <video id="v" playsinline autoplay preload="auto"></video>
@@ -30,7 +30,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     <div id="gest" class="gest"></div>
     <p id="msg" class="pmsg">${risky ? "This is an MKV-style file. Safari may not play it." : ""}</p>
     <div class="pui">
-      <div class="ptop"><button id="back" class="ico">Back</button><span>${label}</span><button id="mn" class="ico">More</button></div>
+      <div class="ptop"><button id="back" class="ico">Back</button><span>${label}</span><button id="ft" class="ico">Fit</button><button id="mn" class="ico">More</button></div>
       <div class="pmid"><button id="rw" class="big">-${settings.skip}</button><button id="pp" class="big">❚❚</button><button id="fw" class="big">+${settings.skip}</button></div>
       <div class="pbot"><span id="cur">0:00</span><input id="seek" type="range" min="0" max="1000" value="0"><span id="dur">0:00</span></div>
     </div>
@@ -45,6 +45,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
       <label id="slab" class="hidden">Embedded subtitles<select id="es"></select></label>
       <label>Volume<input id="vol" type="range" min="0" max="200" value="${Math.round(settings.vol * 100)}"></label>
       <label>Brightness<input id="br" type="range" min="40" max="160" value="${Math.round(settings.bright * 100)}"></label>
+      <label>Sleep timer<select id="sl"><option value="0">Off</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="end">End of episode</option></select></label>
       <button id="pip">Picture in picture</button>
       <button id="mc" class="ghost">Close</button>
     </div></div>`);
@@ -88,6 +89,10 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   };
   const setBright = (x) => { settings.bright = Math.max(0.4, Math.min(1.6, x)); v.style.filter = "brightness(" + settings.bright + ")"; };
   setBright(settings.bright);
+  const FITS = [["contain", "Fit"], ["cover", "Fill"], ["fill", "Stretch"]];
+  const setFit = (i) => { v.style.objectFit = FITS[i][0]; $("ft").textContent = FITS[i][1]; settings.fit = FITS[i][0]; };
+  setFit(Math.max(0, FITS.findIndex((x) => x[0] === settings.fit)));
+  let sleepT = 0, sleepEnd = false;
   if (settings.vol !== 1) v.addEventListener("play", () => setVol(settings.vol), { once: true });
   const flash = (t) => { $("msg").textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { $("msg").textContent = ""; }, 900); };
   const show = () => {
@@ -115,6 +120,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     const nt = v.currentTime;
     if (!v.paused && nt > lastT && nt - lastT < 3) acc += nt - lastT;
     lastT = nt;
+    if (navigator.mediaSession && v.duration && isFinite(v.duration)) { try { navigator.mediaSession.setPositionState({ duration: v.duration, playbackRate: v.playbackRate || 1, position: Math.min(nt, v.duration) }); } catch (e) {} }
     if (acc >= 10) { onWatch(acc); acc = 0; }
     pos[m.id] = Math.floor(v.currentTime);
     if (!marked && v.duration && v.currentTime / v.duration >= 0.92) { marked = true; onSeen(m); }
@@ -122,7 +128,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   });
   v.addEventListener("play", () => { $("pp").textContent = "❚❚"; show(); });
   v.addEventListener("pause", () => { $("pp").textContent = "▶"; pl.classList.add("show"); });
-  v.addEventListener("ended", () => { if (!marked) { marked = true; onSeen(m); } pos[m.id] = 0; save(); if (next) { clearInterval(tick); next(); } });
+  v.addEventListener("ended", () => { if (!marked) { marked = true; onSeen(m); } pos[m.id] = 0; save(); if (next && !sleepEnd) { clearInterval(tick); next(); } });
   v.addEventListener("error", () => { $("msg").textContent = "This file can't be played in your browser."; pl.classList.add("show"); });
 
   const tick = setInterval(() => {
@@ -132,6 +138,13 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
   }, 150);
 
   $("pp").onclick = () => (v.paused ? v.play() : v.pause());
+  $("ft").onclick = () => { const i = (FITS.findIndex((x) => x[0] === settings.fit) + 1) % FITS.length; setFit(i); flash(FITS[i][1]); save(); show(); };
+  $("sl").onchange = (e) => {
+    clearTimeout(sleepT);
+    sleepEnd = e.target.value === "end";
+    const n = Number(e.target.value);
+    if (n) sleepT = setTimeout(() => { v.pause(); flash("Sleep timer: paused"); }, n * 60000);
+  };
   $("rw").onclick = () => { skip(-1); show(); };
   $("fw").onclick = () => { skip(1); show(); };
   $("seek").addEventListener("touchstart", () => { seeking = true; }, { passive: true });
@@ -169,7 +182,7 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
     else if (v.requestPictureInPicture) v.requestPictureInPicture().catch(() => flash("Picture in picture is not available"));
     else flash("Picture in picture is not available");
   };
-  $("back").onclick = () => { if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
+  $("back").onclick = () => { clearTimeout(sleepT); if ("mediaSession" in navigator) navigator.mediaSession.metadata = null; if (acc > 0) onWatch(acc); if (mk) mk.destroy(); clearInterval(tick); save(); v.pause(); v.removeAttribute("src"); v.load(); back(); };
 
   const g = $("gest");
   let sx = 0, sy = 0, moved = false, drag = 0, lastTap = 0, tapT = 0;
@@ -201,5 +214,15 @@ export function play({ m, label, settings, pos, save, view, back, onSeen, onWatc
       tapT = setTimeout(() => { if (pl.classList.contains("show") && !v.paused) pl.classList.remove("show"); else show(); }, 300);
     }
   });
+  if ("mediaSession" in navigator) {
+    const ms = navigator.mediaSession;
+    ms.metadata = new MediaMetadata({ title, artist: "NWFlix iOS", artwork: [{ src: poster || new URL("icon-512.png", location.href).href, sizes: "512x512" }] });
+    ms.setActionHandler("play", () => v.play());
+    ms.setActionHandler("pause", () => v.pause());
+    ms.setActionHandler("seekbackward", () => skip(-1));
+    ms.setActionHandler("seekforward", () => skip(1));
+    ms.setActionHandler("seekto", (d) => { v.currentTime = d.seekTime; });
+    ms.setActionHandler("nexttrack", next ? () => { clearInterval(tick); next(); } : null);
+  }
   show();
 }
