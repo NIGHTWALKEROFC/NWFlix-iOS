@@ -7,7 +7,7 @@ const app = initializeApp({
   authDomain: "nwflix-4ea44.firebaseapp.com",
   projectId: "nwflix-4ea44",
   appId: "1:277538993543:web:b2521848009f7be4604f22"
-});
+}, "nwflix-ios-admin");
 const auth = getAuth(app);
 const ref = doc(getFirestore(app), "config", "ios");
 const $ = (id) => document.getElementById(id);
