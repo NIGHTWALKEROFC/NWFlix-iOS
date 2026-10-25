@@ -71,7 +71,7 @@ export async function login(ask) {
 export async function logout() {
   try { await client.invoke(new Api.auth.LogOut()); } catch (e) {}
   localStorage.removeItem(SESSION_KEY);
-  ["nwios_lib", "nwios_user", "nwios_pos", "nwios_fs"].forEach((k) => localStorage.removeItem(k));
+  ["nwios_lib", "nwios_user", "nwios_pos", "nwios_fs", "nwios_time"].forEach((k) => localStorage.removeItem(k));
   location.reload();
 }
 
