@@ -15,7 +15,7 @@ const POS = "nwios_pos";
 const SET = "nwios_set";
 let library = JSON.parse(localStorage.getItem(LIB) || "[]");
 let pos = JSON.parse(localStorage.getItem(POS) || "{}");
-let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true, vol: 1, bright: 1, text: 17, accent: "#B88CFF", buffer: 40, saver: false }, JSON.parse(localStorage.getItem(SET) || "{}"));
+let settings = Object.assign({ speed: 1, skip: 10, resume: true, hide: true, gestures: true, subSize: 20, subBg: true, stats: true, vol: 1, bright: 1, text: 17, accent: "#B88CFF", buffer: 40, saver: false, sync: true, fit: "contain" }, JSON.parse(localStorage.getItem(SET) || "{}"));
 let pending = null;
 
 const save = () => localStorage.setItem(SET, JSON.stringify(settings));
@@ -25,6 +25,29 @@ function applyTheme() {
   document.body.style.fontSize = settings.text + "px";
 }
 applyTheme();
+
+function toast(t) {
+  const d = document.createElement("div");
+  d.className = "toast";
+  d.textContent = t;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 2600);
+}
+addEventListener("offline", () => toast("You're offline"));
+addEventListener("online", () => toast("Back online"));
+
+const ptr = document.createElement("div");
+ptr.id = "ptr";
+ptr.textContent = "Pull to refresh";
+document.body.appendChild(ptr);
+let pullY = null, pullD = 0;
+document.addEventListener("touchstart", (e) => { pullY = window.scrollY === 0 && document.getElementById("scan") ? e.touches[0].clientY : null; pullD = 0; }, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  if (pullY === null) return;
+  pullD = e.touches[0].clientY - pullY;
+  if (pullD > 10) { ptr.style.transform = "translate(-50%, " + Math.min(pullD, 110) + "px)"; ptr.textContent = pullD > 80 ? "Release to scan" : "Pull to refresh"; }
+}, { passive: true });
+document.addEventListener("touchend", () => { if (pullY !== null && pullD > 80) rescan(); pullY = null; ptr.style.transform = ""; });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tags = (n) => {
   const t = n.toLowerCase(), o = [];
@@ -36,7 +59,7 @@ const tags = (n) => {
 };
 const gb = (b) => (b / 1073741824).toFixed(2) + " GB";
 
-function view(html) { root.innerHTML = html; }
+function view(html) { root.innerHTML = html; window.scrollTo(0, 0); }
 
 function ask(kind, text) {
   if (kind === "error") {
@@ -149,28 +172,79 @@ function applyRemote(c) {
   const ab = document.getElementById("ab"); if (ab) ab.onclick = () => setTimeout(close, 300);
 }
 
+function offlineView() {
+  view(`<div class="login"><svg class="nowifi" viewBox="0 0 24 24"><path d="M2 9a15 15 0 0120 0M5 12.5a10 10 0 0114 0M8.5 16a5 5 0 017 0M12 19.5v.5M3 3l18 18"/></svg>
+    <h1>No connection</h1><p class="muted center">NWFlix can't reach Telegram right now. Check your internet and try again.</p>
+    <button class="btn" onclick="location.reload()">Retry</button></div>`);
+}
+
+const isKey = (k) => /^[ts]\d+$/.test(k);
+
+function touchSync() {
+  localStorage.setItem("nwios_syncT", String(Date.now()));
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(pushSync, 5000);
+}
+
+async function pushSync() {
+  if (!settings.sync) return;
+  const keep = (o) => Object.keys(o).filter((k) => o[k] && isKey(k));
+  const p = {};
+  Object.entries(pos).forEach(([k, v]) => { if (v > 5) p[k] = v; });
+  try { await rc.pushSync({ wl: keep(ud.wl), fav: keep(ud.fav), seen: Object.keys(ud.seen), pos: p, time: wt, t: Number(localStorage.getItem("nwios_syncT") || 0) }); } catch (e) {}
+}
+
+async function syncPull() {
+  try {
+    const r = await rc.pullSync();
+    const local = Number(localStorage.getItem("nwios_syncT") || 0);
+    if (r && r.t > local) {
+      const mix = (cur, list) => { const o = {}; Object.keys(cur).forEach((k) => { if (!isKey(k) && cur[k]) o[k] = true; }); list.forEach((k) => (o[k] = true)); return o; };
+      ud.wl = mix(ud.wl, r.wl || []);
+      ud.fav = mix(ud.fav, r.fav || []);
+      ud.seen = Object.fromEntries((r.seen || []).map((k) => [k, 1]));
+      pos = r.pos || {};
+      Object.keys(wt).forEach((k) => delete wt[k]);
+      Object.assign(wt, r.time || {});
+      localStorage.setItem("nwios_user", JSON.stringify(ud));
+      localStorage.setItem(POS, JSON.stringify(pos));
+      localStorage.setItem("nwios_time", JSON.stringify(wt));
+      localStorage.setItem("nwios_syncT", String(r.t));
+      if (document.getElementById("scan")) home();
+    } else if (local > (r ? r.t : 0)) pushSync();
+  } catch (e) {}
+}
+
+document.addEventListener("visibilitychange", () => { if (document.hidden && syncTimer) { clearTimeout(syncTimer); syncTimer = 0; pushSync(); } });
+
 async function boot() {
   if (!tg.hasKeys()) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">Telegram keys are missing in this build.</p></div>'); return; }
+  if (!navigator.onLine) { offlineView(); return; }
   if (!tg.hasSession()) await rc.logout();
   view('<div class="login"><div class="spin"></div></div>');
   if (!("serviceWorker" in navigator)) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">This browser cannot stream. Update iOS and open this page in Safari.</p></div>'); return; }
-  if (!(await tg.resume())) {
+  const resumed = await tg.resume();
+  if (resumed === "error") { offlineView(); return; }
+  if (!resumed) {
     try { await tg.login(ask); } catch (e) { view(`<div class="login"><p class="bad">${esc(tg.friendly(e.message || ""))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`); return; }
   }
   await gate();
   rc.watchConfig(applyRemote);
+  if (settings.sync) syncPull();
   if (settings.stats) rc.heartbeat();
   tg.me().then((n) => { userName = n; });
   await tg.startStreaming(() => library);
   if (!localStorage.getItem("nwios_a2hs")) setTimeout(() => a2hs(false), 1800);
   home();
-  if (!library.length) rescan(); else enrichAll();
+  if (!library.length) rescan(); else { enrichAll(); rescan({ quiet: true }); }
 }
 
 const ud = Object.assign({ fav: {}, wl: {}, seen: {} }, JSON.parse(localStorage.getItem("nwios_user") || "{}"));
-const saveUd = () => localStorage.setItem("nwios_user", JSON.stringify(ud));
+const saveUd = () => { localStorage.setItem("nwios_user", JSON.stringify(ud)); touchSync(); };
 let scanNote = "";
 let userName = "";
+let cursor = JSON.parse(localStorage.getItem("nwios_cur") || "{}");
+let scanning = false, homeY = 0, restoreY = null, syncTimer = 0;
 const wt = JSON.parse(localStorage.getItem("nwios_time") || "{}");
 let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "";
 
@@ -264,7 +338,8 @@ function home(q = "") {
   document.getElementById("fq").onchange = (e) => { fQual = e.target.value; home(q); };
   document.getElementById("ft").onchange = (e) => { fType = e.target.value; home(q); };
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => { tab = b.dataset.t; home(); }));
-  document.querySelectorAll(".card").forEach((c) => (c.onclick = () => detail(byKey(c.dataset.k), () => home(q))));
+  document.querySelectorAll(".card").forEach((c) => (c.onclick = () => { homeY = window.scrollY; detail(byKey(c.dataset.k), () => { restoreY = homeY; home(q); }); }));
+  if (restoreY !== null) { window.scrollTo(0, restoreY); restoreY = null; }
 }
 
 function detail(g, back) {
@@ -376,18 +451,27 @@ function fix(g, back) {
   };
 }
 
-async function rescan() {
-  const s = document.getElementById("status");
-  if (s) s.textContent = "Scanning your Telegram chats…";
+async function rescan(opts) {
+  const o = opts && (opts.full || opts.quiet) ? opts : {};
+  if (scanning) return;
+  scanning = true;
+  if (o.full) { cursor = {}; library = []; localStorage.setItem(LIB, "[]"); }
+  const status = (t) => { const e = document.getElementById("status"); if (e && !o.quiet) e.textContent = t; };
+  status(library.length ? "Checking for new movies…" : "Scanning your Telegram chats…");
+  let added = 0;
   try {
-    const res = await tg.scan((n, d, t) => { const e = document.getElementById("status"); if (e) e.textContent = "Scanning chat " + d + " of " + t + " · " + n + " found"; });
-    const old = new Map(library.map((m) => [m.id, m]));
-    library = res.items.map((m) => old.get(m.id) || m);
+    const res = await tg.scan((n, d, t) => status("Scanning chat " + d + " of " + t + " · " + n + " new"), cursor, library.map((m) => m.name));
+    const have = new Set(library.map((m) => m.id));
+    const fresh = res.items.filter((m) => !have.has(m.id));
+    added = fresh.length;
+    library = library.concat(fresh);
     localStorage.setItem(LIB, JSON.stringify(library));
-    scanNote = res.items.length ? "" : "Checked " + res.chats + " chats · " + res.docs + " files seen · " + res.passed + " passed the movie check" + (res.errors ? " · " + res.errors + " chats unreadable (" + res.firstErr + ")" : "");
-  } catch (e) { scanNote = "Scan failed: " + (e.message || e); }
-  home();
-  const sn = document.getElementById("status"); if (sn) sn.textContent = scanNote;
+    localStorage.setItem("nwios_cur", JSON.stringify(cursor));
+    scanNote = library.length ? "" : "Checked " + res.chats + " chats · " + res.docs + " files seen · " + res.passed + " passed the movie check" + (res.errors ? " · " + res.errors + " chats unreadable (" + res.firstErr + ")" : "");
+  } catch (e) { if (!o.quiet) scanNote = "Scan failed: " + (e.message || e); }
+  scanning = false;
+  if (o.quiet && !added) return;
+  if (document.getElementById("scan")) home();
   enrichAll();
 }
 
@@ -401,10 +485,10 @@ async function enrichAll() {
 function play(m, back, next) {
   const g = groups().find((x) => x.files.some((f) => f.id === m.id));
   player.play({
-    m, label: esc(g ? title(g.v) : m.title), settings, pos, view, back,
-    save: () => { save(); localStorage.setItem(POS, JSON.stringify(pos)); },
+    m, label: esc(g ? title(g.v) : m.title), title: g ? title(g.v) : m.title, poster: g && g.v.poster ? tmdb.img(g.v.poster) : "", settings, pos, view, back,
+    save: () => { save(); localStorage.setItem(POS, JSON.stringify(pos)); touchSync(); },
     next, onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); },
-    onWatch: (s) => { const d = new Date().toISOString().slice(0, 10); wt[d] = Math.round((wt[d] || 0) + s); localStorage.setItem("nwios_time", JSON.stringify(wt)); }
+    onWatch: (s) => { const d = new Date().toISOString().slice(0, 10); wt[d] = Math.round((wt[d] || 0) + s); localStorage.setItem("nwios_time", JSON.stringify(wt)); touchSync(); }
   });
 }
 
@@ -478,9 +562,12 @@ function settingsPage(k) {
     $("out").onclick = async () => { await rc.logout(); tg.logout(); };
   } else if (k === "privacy") {
     page("Privacy & Security", `${sw("st", "Share anonymous usage statistics", settings.stats)}
+      ${sw("sy", "Sync lists and progress across devices", settings.sync)}
       <p class="muted nopad">Only your app version, iOS version, country and how often you open the app. Never what you watch.</p>
+      <button id="dc" class="btn ghost">Delete synced data from the cloud</button>
       <button id="del" class="btn ghost">Delete my data on this device</button>`, back);
-    flag("st", "stats");
+    flag("st", "stats"); flag("sy", "sync");
+    $("dc").onclick = async () => { try { await rc.deleteSync(); $("dc").textContent = "Cloud data deleted"; } catch (e) { $("dc").textContent = "Could not delete, try again"; } };
     $("del").onclick = async () => { await rc.logout(); tg.logout(); };
   } else if (k === "player") {
     page("Player Settings", `${sw("r", "Resume where I stopped", settings.resume)}${sw("gs", "Swipe gestures: seek, brightness, volume", settings.gestures)}
@@ -492,7 +579,7 @@ function settingsPage(k) {
       <button id="clr" class="btn ghost">Clear watch history</button><button id="rst" class="btn ghost">Clear library and rescan</button>`, back);
     flag("h", "hide");
     $("clr").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("clr").textContent = "History cleared"; };
-    $("rst").onclick = () => { library = []; localStorage.setItem(LIB, "[]"); home(); rescan(); };
+    $("rst").onclick = () => { rescan({ full: true }); };
   } else if (k === "stats") {
     const gs = groups();
     const cell = (n, t) => `<div class="stat"><b>${n}</b><small>${t}</small></div>`;
@@ -512,7 +599,7 @@ function settingsPage(k) {
     page("Storage & Cache", `<div class="sgroup">${[["Library and movie details", LIB], ["Watch progress", POS], ["Lists and watched marks", "nwios_user"], ["Watch time", "nwios_time"]].map(([t, key]) => `<div class="srow"><span class="stx"><b>${t}</b></span><small>${kb(key)}</small></div>`).join("")}</div>
       <button id="cd" class="btn ghost">Clear saved movie details</button><button id="cl" class="btn ghost">Clear library cache</button><button id="ch" class="btn ghost">Clear watch history</button>`, back);
     $("cd").onclick = () => { library.forEach((m) => ["tmdb", "series", "name", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x])); localStorage.setItem(LIB, JSON.stringify(library)); home(); enrichAll(); };
-    $("cl").onclick = () => { library = []; localStorage.setItem(LIB, "[]"); home(); rescan(); };
+    $("cl").onclick = () => { rescan({ full: true }); };
     $("ch").onclick = () => { pos = {}; ud.seen = {}; localStorage.setItem(POS, "{}"); saveUd(); $("ch").textContent = "History cleared"; };
   } else if (k === "help") {
     page("Help & Support", `<div class="sgroup">
