@@ -133,7 +133,22 @@ function frames(c, scale) {
 
 const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
 const u16 = (n) => [(n >> 8) & 255, n & 255];
-const cat = (...p) => { const a = p.flat(); const o = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+const cat = (...p) => {
+  const segs = [];
+  let run = [];
+  const flush = () => { if (run.length) { segs.push(Uint8Array.from(run)); run = []; } };
+  const walk = (x) => {
+    if (typeof x === "number") run.push(x & 255);
+    else if (x instanceof Uint8Array) { flush(); segs.push(x); }
+    else for (const y of x) walk(y);
+  };
+  walk(p);
+  flush();
+  const o = new Uint8Array(segs.reduce((n, x) => n + x.length, 0));
+  let i = 0;
+  for (const x of segs) { o.set(x, i); i += x.length; }
+  return o;
+};
 const box = (t, ...p) => { const d = cat(...p); return cat(u32(d.length + 8), [...t].map((c) => c.charCodeAt(0)), d); };
 const full = (t, v, f, ...p) => box(t, [v, (f >> 16) & 255, (f >> 8) & 255, f & 255], ...p);
 const z = (n) => new Array(n).fill(0);
@@ -314,6 +329,12 @@ export async function attach(video, item, hooks = {}) {
   };
 
   video.addEventListener("seeking", () => { if (!has(video.currentTime)) run(nearest(video.currentTime)); });
+  video.addEventListener("waiting", () => {
+    for (let i = 0; i < sb.buffered.length; i++) {
+      const st = sb.buffered.start(i);
+      if (st > video.currentTime && st - video.currentTime < 0.5) { video.currentTime = st + 0.01; break; }
+    }
+  });
   run(f.first);
   return {
     audios: audios.map((t, i) => ({ i, label: nameOf(t, i) + " · " + t.codec.replace("A_", "") + " " + (t.ch > 2 ? t.ch - 1 + ".1" : t.ch + "ch") })),
