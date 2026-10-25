@@ -27,22 +27,44 @@ export async function resume() {
   try {
     await connect();
     if (!(await client.checkAuthorization())) return false;
-    client.getDialogs({ limit: 200 }).catch(() => {});
+    loadChats().catch(() => {});
     return true;
   } catch (e) { return false; }
 }
 
 export async function login(ask) {
   await connect();
-  await client.signInUser(
-    { apiId: API_ID, apiHash: API_HASH },
-    {
-      phoneNumber: () => ask("phone"),
-      phoneCode: () => ask("code"),
-      password: () => ask("password"),
-      onError: async (e) => { ask("error", friendly(e.message || String(e))); return false; }
+  const creds = { apiId: API_ID, apiHash: API_HASH };
+  let phone = "", sent = null, err = "";
+  while (!sent) {
+    phone = await ask("phone", err);
+    try { sent = await client.sendCode(creds, phone); } catch (e) { err = friendly(e.errorMessage || e.message || ""); }
+  }
+  let hash = sent.phoneCodeHash;
+  err = "";
+  for (;;) {
+    const code = await ask("code", err);
+    err = "";
+    if (code === "__resend__") {
+      try { sent = await client.sendCode(creds, phone, true); hash = sent.phoneCodeHash; err = "A new code was sent."; }
+      catch (e) { err = friendly(e.errorMessage || e.message || ""); }
+      continue;
     }
-  );
+    try {
+      await client.invoke(new Api.auth.SignIn({ phoneNumber: phone, phoneCodeHash: hash, phoneCode: code }));
+      break;
+    } catch (e) {
+      const m = e.errorMessage || e.message || "";
+      if (m === "SESSION_PASSWORD_NEEDED") {
+        await client.signInWithPassword(creds, {
+          password: () => ask("password", ""),
+          onError: async (er) => { ask("error", friendly(er.errorMessage || er.message || "")); return false; }
+        });
+        break;
+      }
+      err = friendly(m);
+    }
+  }
   localStorage.setItem(SESSION_KEY, client.session.save());
 }
 
@@ -63,59 +85,75 @@ export function friendly(m) {
   return m || "Something went wrong talking to Telegram.";
 }
 
+const entities = new Map();
+let loading = null;
+
+export function loadChats() {
+  loading = (async () => {
+    const main = await client.getDialogs({ limit: 500 });
+    let arch = [];
+    try { arch = await client.getDialogs({ limit: 300, folder: 1 }); } catch (e) {}
+    const list = main.concat(arch).filter((d, i, a) => d.entity && a.findIndex((x) => x.id.toString() === d.id.toString()) === i);
+    list.forEach((d) => entities.set(d.id.toString(), d));
+    return list;
+  })();
+  return loading;
+}
+
+export async function me() {
+  try { const u = await client.getMe(); return u.firstName || u.username || ""; } catch (e) { return ""; }
+}
+
 export async function scan(onProgress) {
-  const main = await client.getDialogs({ limit: 500 });
-  let archived = [];
-  try { archived = await client.getDialogs({ limit: 300, folder: 1 }); } catch (e) {}
-  const dialogs = main.concat(archived).filter((d, i, a) => d.entity && a.findIndex((x) => x.id.toString() === d.id.toString()) === i);
-  const out = [];
-  const raws = [];
-  const seen = new Set();
-  let done = 0, errors = 0, docs = 0, passed = 0, firstErr = "";
+  const dialogs = await loadChats();
+  const raws = [], out = [], seen = new Set();
+  let next = 0, done = 0, errors = 0, docs = 0, passed = 0, firstErr = "";
 
   const take = (d, m) => {
-    if (!m.document || !m.file) return;
+    const doc = m.media && m.media.document;
+    if (!doc || !doc.attributes) return;
     docs++;
+    const fn = doc.attributes.find((a) => a.className === "DocumentAttributeFilename");
+    const vd = doc.attributes.find((a) => a.className === "DocumentAttributeVideo");
     const r = {
-      id: d.id.toString() + "_" + m.id,
-      chat: d.id.toString(),
-      msg: m.id,
-      name: m.file.name || "",
-      size: Number(m.file.size || 0),
-      dur: Number(m.file.duration || 0),
-      mime: m.file.mimeType || "video/mp4",
-      at: (m.date || 0) * 1000
+      id: d.id.toString() + "_" + m.id, chat: d.id.toString(), msg: m.id,
+      name: fn ? fn.fileName : "", size: Number(doc.size || 0), dur: vd ? Number(vd.duration || 0) : 0,
+      mime: doc.mimeType || "video/mp4", at: (m.date || 0) * 1000
     };
     if (!looksLikeMovie(r)) return;
     passed++;
-    const dup = r.id;
-    if (seen.has(dup)) return;
-    seen.add(dup);
+    if (seen.has(r.id)) return;
+    seen.add(r.id);
     r.cap = m.message || "";
     raws.push(r);
   };
 
-  const run = async (list, filters, limit) => {
-    let next = 0;
-    done = 0;
-    const worker = async () => {
-      while (next < list.length) {
-        const d = list[next++];
-        for (const F of filters) {
-          try {
-            const opt = F ? { filter: new F(), limit } : { limit };
-            for await (const m of client.iterMessages(d.entity, opt)) take(d, m);
-          } catch (e) { errors++; firstErr = firstErr || String((e && e.message) || e); }
-        }
-        done++;
-        onProgress(raws.length, done, list.length);
-      }
-    };
-    await Promise.all([worker(), worker(), worker()]);
+  const pages = async (d, F) => {
+    const peer = d.inputEntity || (await client.getInputEntity(d.entity));
+    let offsetId = 0;
+    for (let i = 0; i < 40; i++) {
+      const res = await client.invoke(new Api.messages.Search({
+        peer, q: "", filter: new F(), minDate: 0, maxDate: 0, offsetId, addOffset: 0, limit: 100, maxId: 0, minId: 0, hash: bigInt(0)
+      }));
+      const msgs = res.messages || [];
+      msgs.forEach((m) => take(d, m));
+      if (msgs.length < 100) break;
+      offsetId = msgs[msgs.length - 1].id;
+    }
   };
 
-  await run(dialogs, [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument], 2000);
-  if (!docs) await run(dialogs.slice(0, 100), [null], 300);
+  const worker = async () => {
+    while (next < dialogs.length) {
+      const d = dialogs[next++];
+      for (const F of [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument]) {
+        try { await pages(d, F); } catch (e) { errors++; firstErr = firstErr || String((e && (e.errorMessage || e.message)) || e); }
+      }
+      done++;
+      onProgress(raws.length, done, dialogs.length);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+
   learnHandles(raws.map((r) => r.name));
   for (const r of raws) {
     const p = parse(r.name, r.cap);
@@ -127,7 +165,11 @@ export async function scan(onProgress) {
 
 async function message(item) {
   if (cache.has(item.id)) return cache.get(item.id);
-  const [m] = await client.getMessages(item.chat, { ids: [item.msg] });
+  await (loading || loadChats());
+  const d = entities.get(item.chat);
+  if (!d) throw new Error("Chat not found. Rescan and try again.");
+  const [m] = await client.getMessages(d.entity, { ids: [item.msg] });
+
   if (!m || !m.media) throw new Error("File not found in Telegram");
   cache.set(item.id, m);
   return m;
