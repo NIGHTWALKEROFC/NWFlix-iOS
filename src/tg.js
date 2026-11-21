@@ -192,6 +192,7 @@ async function message(item) {
 }
 
 export async function readRange(item, start, len) {
+  if (item.localFile) return new Uint8Array(await item.localFile.slice(start, Math.min(item.localFile.size, start + len)).arrayBuffer());
   const m = await message(item);
   const end = Math.min(item.size, start + len);
   const first = Math.floor(start / CHUNK) * CHUNK;
