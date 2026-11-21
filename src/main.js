@@ -5,6 +5,7 @@ import * as player from "./player.js";
 import * as legal from "./legal.js";
 import * as guides from "./guides.js";
 import * as cty from "./countries.js";
+import * as dl from "./downloads.js";
 
 const root = document.getElementById("app");
 const put = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -87,7 +88,7 @@ const IC = {
 const ficon = (k) => svg(IC[k]);
 const SPIN = '<span class="spin sm"></span>';
 
-function view(html) { clearInterval(O.timer); root.innerHTML = html; window.scrollTo(0, 0); }
+function view(html) { clearInterval(O.timer); clearInterval(heroT); root.innerHTML = html; window.scrollTo(0, 0); }
 
 function dialog(html) {
   const b = document.createElement("div");
@@ -432,7 +433,7 @@ let booted = false;
 async function boot() {
   if (installGate()) return;
   if (!tg.hasKeys()) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">Telegram keys are missing in this build.</p></div>'); return; }
-  if (!navigator.onLine) { offlineView(); return; }
+  if (!navigator.onLine) { if (dl.all().some((d) => d.state === "done")) downloadsView(true); else offlineView(); return; }
   if (!tg.hasSession()) await rc.logout();
   view('<div class="login"><div class="spin"></div></div>');
   if (!("serviceWorker" in navigator)) { view('<div class="login"><h1>NWFlix iOS</h1><p class="bad">This browser cannot stream. Update iOS and open this page in Safari.</p></div>'); return; }
@@ -461,26 +462,47 @@ let cursor = jp("nwios_cur", {});
 let scanning = false, homeY = 0, restoreY = null, syncTimer = 0;
 const scanSt = { on: false, phase: "", found: 0, quiet: false };
 const wt = jp("nwios_time", {});
-let tab = "all", sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "";
-let curDetail = "";
+let sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "", exQ = "";
+let curDetail = "", heroT = 0, dlTab = "off";
+const lastPl = jp("nwios_last", {});
+const opened = jp("nwios_open", {});
+let baseAt = Number(get("nwios_base") || 0);
+if (!baseAt) { baseAt = Date.now(); put("nwios_base", String(baseAt)); }
+const enrSt = { on: false, n: 0, t: 0 };
 const onHome = () => !!$("refresh");
+const onExplore = () => !!$("exq");
 
+const fi = (d) => `<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`;
 const ICONS = {
-  all: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/></svg>',
-  wl: '<svg viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>',
-  lib: '<svg viewBox="0 0 24 24"><path d="M5 4h4v16H5zM11 4h4v16h-4zM17.5 5l3.5 1-3.5 14-3.5-1z"/></svg>',
-  fav: '<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.8-8 11-8 11z"/></svg>',
-  set: '<svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>'
+  all: fi("M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"),
+  ex: fi("M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"),
+  dl: fi("M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"),
+  lib: fi("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"),
+  set: fi("M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z")
 };
+const DP = {
+  heartOff: "M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z",
+  heartOn: "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+  eye: "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z",
+  add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+  down: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+  pause: "M6 19h4V5H6v14zm8-14v14h4V5h-4z",
+  play: "M8 5v14l11-7z",
+  check: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+  clapper: "M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z",
+  info: "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"
+};
+const dpi = (k) => svg(DP[k]);
 
 const SORTS = {
   added: (a, b) => b.at - a.at,
+  popular: (a, b) => (b.v.pop || 0) - (a.v.pop || 0) || (b.v.rating || 0) - (a.v.rating || 0),
   rating: (a, b) => (b.v.rating || 0) - (a.v.rating || 0),
-  year: (a, b) => (b.v.year || 0) - (a.v.year || 0),
+  year: (a, b) => (b.v.year || 0) - (a.v.year || 0) || b.at - a.at,
   az: (a, b) => title(a.v).localeCompare(title(b.v)),
   longest: (a, b) => (b.v.runtime || 0) - (a.v.runtime || 0)
 };
-const SORT_NAMES = { added: "Recently added", rating: "Rating", year: "Release year", az: "A to Z", longest: "Longest" };
+const SORT_NAMES = { added: "Recently added", popular: "Most popular", rating: "Rating", year: "Release year", az: "A to Z", longest: "Longest" };
 const QUALITIES = ["4K", "1080p", "720p", "480p"];
 
 function groups() {
@@ -499,85 +521,125 @@ const title = (m) => m.name || m.title;
 const year = (m) => m.year || "";
 const watched = (g) => g.files.every((f) => ud.seen[f.id]);
 const started = (g) => g.files.some((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]);
+const lastOf = (g) => Math.max(0, ...g.files.map((f) => lastPl[f.id] || 0));
+const matchedG = (g) => g.v.tmdb > 0;
 const percent = (g) => {
   const f = g.files.filter((x) => (pos[x.id] || 0) > 5 && x.dur).sort((a, b) => pos[b.id] - pos[a.id])[0];
   return f ? Math.min(100, Math.round((pos[f.id] / f.dur) * 100)) : 0;
 };
+const mins = (n) => (n ? Math.floor(n / 60) + "h " + (n % 60) + "m" : "");
 
 function cardHtml(g, bar) {
   const v = g.v;
-  return `<button class="card" data-k="${esc(g.key)}"><div class="poster">${v.poster ? `<img src="${tmdb.img(v.poster)}" loading="lazy" alt="">` : esc(title(v).slice(0, 1).toUpperCase())}${v.rating ? `<i class="rate">★ ${v.rating.toFixed(1)}</i>` : ""}${watched(g) ? '<i class="tick">✓</i>' : ""}${bar ? `<i class="prog" style="width:${percent(g)}%"></i>` : ""}</div>
-    <span class="t">${esc(title(v))}</span><span class="s">${year(v)}${g.files.length > 1 ? " · " + g.files.length + " files" : ""}</span></button>`;
+  const badge = isSeries(g) ? episodes(g).length + " eps" : g.files.length > 1 ? g.files.length + " files" : "";
+  const fresh = g.at > baseAt && !opened[g.key];
+  return `<button class="card" data-k="${esc(g.key)}"><div class="poster">${v.poster ? `<img src="${tmdb.img(v.poster)}" loading="lazy" alt="">` : esc(title(v).slice(0, 1).toUpperCase())}${badge ? `<i class="chip1">${badge}</i>` : ""}${fresh ? '<i class="newc">NEW</i>' : ""}${v.rating ? `<i class="rate"><b>★</b> ${v.rating.toFixed(1)}</i>` : ""}${watched(g) ? '<i class="tick">✓</i>' : ""}${bar ? `<i class="prog" style="width:${percent(g)}%"></i>` : ""}</div>
+    <span class="t">${esc(title(v))}</span><span class="s">${year(v)}</span></button>`;
 }
 
 function select(id, label, opts, cur) {
   return `<select id="${id}"><option value="">${label}</option>${opts.map((o) => `<option ${o === cur ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
 }
 
-const tabsHtml = (on) => `<nav class="tabs">${[["all", "Home"], ["lib", "Library"], ["set", "Settings"]].map(([k, n]) => `<button data-t="${k}" class="${k === on ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`;
-const bindTabs = () => document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => (b.dataset.t === "lib" ? libraryView() : b.dataset.t === "set" ? settingsView() : home())));
+const TABS = [["all", "Home"], ["ex", "Explore"], ["dl", "Downloads"], ["lib", "My List"], ["set", "Settings"]];
+const tabsHtml = (on) => `<nav class="tabs">${TABS.map(([k, n]) => `<button data-t="${k}" class="${k === on ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`;
+const bindTabs = () => document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => {
+  const k = b.dataset.t;
+  if (k === "lib") libraryView(); else if (k === "set") settingsView(); else if (k === "ex") explore(); else if (k === "dl") downloadsView(); else home();
+}));
 let libTab = "wl";
 
 function libraryView() {
   const all = groups();
   const sets = { wl: all.filter((g) => ud.wl[g.key]), fav: all.filter((g) => ud.fav[g.key]), hist: all.filter((g) => watched(g) || started(g)) };
-  const info = { wl: ["Your watchlist is empty", "Open a movie and tap Add to watchlist."], fav: ["No favorites yet", "Tap Favorite on a movie page to keep it here."], hist: ["Nothing watched yet", "Movies you start will show up here."] };
-  const list = sets[libTab].slice().sort(libTab === "hist" ? (a, b) => percent(b) - percent(a) : SORTS.added);
-  view(`<header class="bar"><b>Library</b><span></span></header>
-    <div class="seg">${[["wl", "Watchlist"], ["fav", "Favorites"], ["hist", "History"]].map(([k, n]) => `<button data-s="${k}" class="${k === libTab ? "on" : ""}">${n} <small>${sets[k].length}</small></button>`).join("")}</div>
+  const info = { wl: ["Your list is empty", "Open a movie and tap My List."], fav: ["No favorites yet", "Tap the heart on a movie page to keep it here."], hist: ["Nothing watched yet", "Movies you start will show up here."] };
+  const list = sets[libTab].slice().sort(libTab === "hist" ? (a, b) => lastOf(b) - lastOf(a) : SORTS.added);
+  view(`<h1 class="shead">My List</h1>
+    <div class="seg">${[["wl", "My List"], ["fav", "Favorites"], ["hist", "History"]].map(([k, n]) => `<button data-s="${k}" class="${k === libTab ? "on" : ""}">${n} <small>${sets[k].length}</small></button>`).join("")}</div>
     <main class="grid">${list.map((g) => cardHtml(g, libTab === "hist")).join("")}</main>
-    ${list.length ? "" : `<div class="empty"><b>${info[libTab][0]}</b><p class="muted center">${info[libTab][1]}</p></div>`}
+    ${list.length ? "" : `<div class="empty">${svg(DP.clapper, "fi big")}<b>${info[libTab][0]}</b><p class="muted center">${info[libTab][1]}</p></div>`}
     ${tabsHtml("lib")}`);
   document.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => { libTab = b.dataset.s; libraryView(); }));
   document.querySelectorAll(".card").forEach((c) => (c.onclick = () => detail(byKey(c.dataset.k), libraryView)));
   bindTabs();
 }
 
+const isBusy = () => (scanSt.on && !scanSt.quiet) || enrSt.on;
+
 function statusLine() {
   if (scanSt.on && !scanSt.quiet && (!library.length || scanSt.found > 0)) return scanSt.phase + "  •  " + scanSt.found + " found";
+  if (enrSt.on) return "Fetching movie details…  •  " + enrSt.n + " / " + enrSt.t;
   return scanNote;
 }
 
 function paintStatus() {
   const e = $("status");
-  if (e) e.textContent = statusLine();
+  const t = statusLine();
+  if (e) e.innerHTML = t ? (isBusy() ? SPIN : "") + "<span>" + esc(t) + "</span>" : "";
   const r = $("refresh");
   if (r) r.innerHTML = scanSt.on && !scanSt.quiet ? SPIN : svg(IC.refresh);
 }
 
-function home(q = "") {
+const rowHtml = (name, list, sort) => `<div class="sh"><h3>${esc(name)}</h3>${sort ? `<button class="sa" data-sort="${sort}">See all</button>` : ""}</div><div class="row">${list.map((g) => cardHtml(g, name === "Continue Watching")).join("")}</div>`;
+
+function heroHtml(list) {
+  return `<div class="hero2" id="hero">${list.map((g) => `<div class="hs" data-k="${esc(g.key)}" style="background-image:linear-gradient(#0000 35%, #010314f2), url(${tmdb.img(g.v.backdrop, "w780")})"><div class="hsc"><h2>${esc(title(g.v))}</h2><p>${esc([g.v.year, (g.v.genres || "").split(", ").slice(0, 2).join(" • "), mins(g.v.runtime)].filter(Boolean).join("  •  "))}</p><div class="hsb"><span class="btn small" data-w="${esc(g.key)}">${dpi("play")}Watch Now</span><span class="tonal" data-l="${esc(g.key)}">${dpi(ud.wl[g.key] ? "check" : "add")}</span></div></div></div>`).join("")}</div>`;
+}
+
+function becauseRows(gs) {
+  const seeds = gs.filter((g) => matchedG(g) && lastOf(g) > 0 && g.v.genres).sort((a, b) => lastOf(b) - lastOf(a));
+  const cands = gs.filter((g) => matchedG(g) && lastOf(g) === 0 && !watched(g) && g.v.genres);
+  const out = [], used = new Set();
+  for (const s of seeds) {
+    if (out.length >= 2) break;
+    const sg = new Set(s.v.genres.toLowerCase().split(", "));
+    const need = Math.min(2, sg.size);
+    const list = cands.filter((c) => !used.has(c.key) && isSeries(c) === isSeries(s))
+      .map((c) => [c, c.v.genres.toLowerCase().split(", ").filter((x) => sg.has(x)).length]).filter((x) => x[1] >= need)
+      .sort((a, b) => b[1] - a[1] || (b[0].v.rating || 0) - (a[0].v.rating || 0)).slice(0, 20).map((x) => x[0]);
+    if (list.length >= 3) { out.push([s, list]); list.forEach((c) => used.add(c.key)); }
+  }
+  return out;
+}
+
+function home() {
+  curDetail = "";
   const all = groups();
   const hide = settings.hide && tmdb.hasKey();
-  const ql = q.toLowerCase();
-  let list = all.filter((g) => !hide || g.v.tmdb > 0 || g.files.some((f) => !f.tried));
-  const hiddenN = tab === "all" ? all.length - list.length : 0;
-  if (tab === "wl") list = list.filter((g) => ud.wl[g.key]);
-  if (tab === "fav") list = list.filter((g) => ud.fav[g.key]);
-  list = list.filter((g) =>
-    (!ql || (title(g.v) + " " + (g.v.cast || []).map((c) => c.n).join(" ") + " " + g.files.map((f) => f.name).join(" ")).toLowerCase().includes(ql)) &&
-    (!fGenre || (g.v.genres || "").includes(fGenre)) &&
-    (!fLang || g.files.some((f) => tags(f.name).includes(fLang))) &&
-    (!fQual || g.files.some((f) => tags(f.name).includes(fQual))) &&
-    (!fType || (fType === "Series") === isSeries(g))
-  ).sort(SORTS[sortBy]);
-  const genres = [...new Set(all.flatMap((g) => (g.v.genres || "").split(", ").filter(Boolean)))].sort();
-  const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((t) => !QUALITIES.includes(t) && t !== "HEVC").sort();
-  const cont = tab === "all" && !q && !fGenre && !fLang && !fQual ? list.filter(started) : [];
-  view(`<header class="bar"><span class="brand"><img src="icon.png" alt="">NWFlix iOS</span><div class="hb"><button id="refresh" class="ib" aria-label="Refresh">${scanSt.on && !scanSt.quiet ? SPIN : svg(IC.refresh)}</button></div></header>
+  const gs = hide ? all.filter(matchedG) : all;
+  const matched = gs.filter(matchedG);
+  const unmatchedN = all.filter((g) => !matchedG(g)).length;
+  const featured = matched.filter((g) => g.v.backdrop).sort(SORTS.popular).slice(0, 5);
+  const cont = gs.filter((g) => lastOf(g) > 0 && started(g) && !watched(g)).sort((a, b) => lastOf(b) - lastOf(a));
+  const pool = matched.filter((g) => g.v.backdrop && !watched(g)).sort((a, b) => String(a.v.tmdb).localeCompare(String(b.v.tmdb)));
+  const d = new Date();
+  const motd = pool.length < 3 ? null : pool[((d.getFullYear() * 366 + Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5)) * 7919) % pool.length];
+  const series = gs.filter(isSeries).sort(SORTS.added);
+  const recent = gs.slice().sort(SORTS.added);
+  const busy = scanSt.on && !scanSt.quiet;
+  let body = "";
+  if (!gs.length) {
+    body = busy
+      ? `<div class="empty">${svg(DP.clapper, "fi big")}<b>Looking for your movies…</b><p class="muted center">Large chats can take a minute the first time.</p></div>`
+      : `<div class="empty">${svg(DP.clapper, "fi big")}<b>No movies found yet</b><p class="muted center">NWFlix looks for long videos and big video files in the chats and channels you can access.</p><button id="again" class="btn small">Scan again</button></div>`;
+  } else {
+    body = (featured.length ? heroHtml(featured) : "") +
+      (motd ? `<div class="motd" data-k="${esc(motd.key)}" style="background-image:linear-gradient(#0000 25%, #010314f2), url(${tmdb.img(motd.v.backdrop, "w780")})"><div><small>MOVIE OF THE DAY</small><h3>${esc(title(motd.v))}</h3><p>${esc([motd.v.year, (motd.v.genres || "").split(", ").slice(0, 2).join(" • "), motd.v.rating ? "★ " + motd.v.rating.toFixed(1) : ""].filter(Boolean).join("  •  "))}</p></div></div>` : "") +
+      (cont.length ? rowHtml("Continue Watching", cont) : "") +
+      becauseRows(gs).map(([s, l]) => rowHtml("Because you watched " + title(s.v), l)).join("") +
+      (matched.length ? rowHtml("Trending Now", matched.slice().sort(SORTS.popular).slice(0, 60), "popular") : "") +
+      (matched.some((g) => g.v.rating > 0) ? rowHtml("Top Rated", matched.filter((g) => g.v.rating > 0).sort(SORTS.rating).slice(0, 60), "rating") : "") +
+      (matched.length ? rowHtml("New Releases", matched.slice().sort(SORTS.year).slice(0, 60), "year") : "") +
+      (series.length ? rowHtml("TV Series", series.slice(0, 60)) : "") +
+      rowHtml("Recently Added (" + recent.length + ")", recent.slice(0, 80), "added") +
+      (hide && unmatchedN ? `<button class="notice" id="unm"><span>${unmatchedN} ${unmatchedN === 1 ? "file has" : "files have"} no movie details yet. Review them in Explore.</span>${svg(IC.chev, "fi")}</button>` : "");
+  }
+  view(`<header class="bar"><img class="bmark" src="brand.png" alt=""><span class="bname">NWFLIX</span><div class="hb"><button id="refresh" class="ib" aria-label="Refresh">${busy ? SPIN : svg(IC.refresh)}</button><button id="srch" class="ib" aria-label="Search">${svg(IC.search)}</button><button id="av" class="avs" aria-label="Settings">${esc((userName || "N")[0].toUpperCase())}</button></div></header>
     <div id="rmenu" class="menu hidden"><button id="m1">Check for new movies</button><button id="m2">Full rescan (slower)</button></div>
-    <div class="search"><input id="q" type="search" placeholder="Search movies or cast" value="${esc(q)}"></div>
-    <div class="filters">
-      <select id="so">${Object.entries(SORT_NAMES).map(([k, n]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${n}</option>`).join("")}</select>
-      ${select("fg", "Genre", genres, fGenre)}${select("fl", "Language", langs, fLang)}${select("fq", "Quality", QUALITIES, fQual)}${select("ft", "Type", ["Movies", "Series"], fType)}
-    </div>
-    <p id="status" class="muted stat-line">${esc(statusLine())}</p>
-    ${hiddenN ? `<p class="muted">${hiddenN} files without details are hidden. <button id="showall" class="linkbtn">Show them</button></p>` : ""}
-    ${cont.length ? `<h3 class="sec">Continue watching</h3><div class="row">${cont.map((g) => cardHtml(g, true)).join("")}</div>` : ""}
-    <main class="grid">${list.map((g) => cardHtml(g, false)).join("")}</main>
-    ${list.length ? "" : `<p class="muted center">${tab === "all" ? "No movies yet. Tap the refresh button to scan." : "Nothing here yet."}</p>`}
+    <div id="status" class="stat-row"></div>
+    ${body}
     ${tabsHtml("all")}`);
-  const qi = $("q");
-  qi.oninput = () => { const v = qi.value; home(v); const n = $("q"); n.focus(); n.setSelectionRange(v.length, v.length); };
+  paintStatus();
   const menu = $("rmenu");
   $("refresh").onclick = (e) => {
     e.stopPropagation();
@@ -586,17 +648,142 @@ function home(q = "") {
   };
   $("m1").onclick = () => { menu.classList.add("hidden"); rescan(); toast("Checking for new movies…"); };
   $("m2").onclick = () => { menu.classList.add("hidden"); rescan({ full: true }); toast("Full scan started"); };
-  const sa = $("showall");
-  if (sa) sa.onclick = () => { settings.hide = false; save(); home(q); };
-  $("so").onchange = (e) => { sortBy = e.target.value; home(q); };
-  $("fg").onchange = (e) => { fGenre = e.target.value; home(q); };
-  $("fl").onchange = (e) => { fLang = e.target.value; home(q); };
-  $("fq").onchange = (e) => { fQual = e.target.value; home(q); };
-  $("ft").onchange = (e) => { fType = e.target.value; home(q); };
+  $("srch").onclick = () => { exQ = ""; explore(true); };
+  $("av").onclick = settingsView;
+  const ag = $("again");
+  if (ag) ag.onclick = () => rescan({ full: true });
+  const un = $("unm");
+  if (un) un.onclick = () => { fGenre = "Unmatched"; sortBy = "added"; explore(); };
+  document.querySelectorAll(".sa").forEach((b) => (b.onclick = () => { sortBy = b.dataset.sort; fGenre = ""; fLang = ""; fQual = ""; fType = ""; exQ = ""; explore(); }));
+  const open = (k) => { const y = window.scrollY; detail(byKey(k), () => { restoreY = y; home(); }); };
+  document.querySelectorAll(".card, .motd").forEach((c) => (c.onclick = () => open(c.dataset.k)));
+  document.querySelectorAll(".hs").forEach((c) => (c.onclick = (e) => {
+    const l = e.target.closest("[data-l]");
+    if (l) { ud.wl[l.dataset.l] = !ud.wl[l.dataset.l]; saveUd(); l.innerHTML = dpi(ud.wl[l.dataset.l] ? "check" : "add"); return; }
+    open(c.dataset.k);
+  }));
+  const hero = $("hero");
+  if (hero && hero.children.length > 1) {
+    heroT = setInterval(() => {
+      const h = $("hero");
+      if (!h) { clearInterval(heroT); return; }
+      const step = h.children[1].offsetLeft - h.children[0].offsetLeft;
+      const i = (Math.round(h.scrollLeft / step) + 1) % h.children.length;
+      h.scrollTo({ left: i * step, behavior: "smooth" });
+    }, 6000);
+  }
   bindTabs();
-  document.querySelectorAll(".card").forEach((c) => (c.onclick = () => { homeY = window.scrollY; detail(byKey(c.dataset.k), () => { restoreY = homeY; home(q); }); }));
   if (restoreY !== null) { window.scrollTo(0, restoreY); restoreY = null; }
 }
+
+function explore(focus) {
+  curDetail = "";
+  const all = groups();
+  const ql = exQ.toLowerCase();
+  const list = all.filter((g) =>
+    (!ql || (title(g.v) + " " + (g.v.cast || []).map((c) => c.n).join(" ") + " " + g.files.map((f) => f.name).join(" ")).toLowerCase().includes(ql)) &&
+    (!fGenre || (fGenre === "Unmatched" ? !matchedG(g) : (g.v.genres || "").includes(fGenre))) &&
+    (!fLang || g.files.some((f) => tags(f.name).includes(fLang))) &&
+    (!fQual || g.files.some((f) => tags(f.name).includes(fQual))) &&
+    (!fType || (fType === "Series") === isSeries(g))
+  ).sort(SORTS[sortBy]);
+  const genres = [...new Set(all.flatMap((g) => (g.v.genres || "").split(", ").filter(Boolean)))].sort().concat(all.some((g) => !matchedG(g)) ? ["Unmatched"] : []);
+  const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((t) => !QUALITIES.includes(t) && t !== "HEVC").sort();
+  view(`<h1 class="shead">Explore</h1>
+    <div class="search"><input id="exq" type="search" placeholder="Search movies or cast" value="${esc(exQ)}"></div>
+    <div class="filters">
+      <select id="so">${Object.entries(SORT_NAMES).map(([k, n]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${n}</option>`).join("")}</select>
+      ${select("fg", "Genre", genres, fGenre)}${select("fl", "Language", langs, fLang)}${select("fq", "Quality", QUALITIES, fQual)}${select("ft", "Type", ["Movies", "Series"], fType)}
+    </div>
+    <main class="grid">${list.map((g) => cardHtml(g, false)).join("")}</main>
+    ${list.length ? "" : '<p class="muted center">Nothing matches.</p>'}
+    ${tabsHtml("ex")}`);
+  const qi = $("exq");
+  qi.oninput = () => { exQ = qi.value; explore(true); };
+  if (focus) { qi.focus(); qi.setSelectionRange(exQ.length, exQ.length); }
+  $("so").onchange = (e) => { sortBy = e.target.value; explore(); };
+  $("fg").onchange = (e) => { fGenre = e.target.value; explore(); };
+  $("fl").onchange = (e) => { fLang = e.target.value; explore(); };
+  $("fq").onchange = (e) => { fQual = e.target.value; explore(); };
+  $("ft").onchange = (e) => { fType = e.target.value; explore(); };
+  bindTabs();
+  document.querySelectorAll(".card").forEach((c) => (c.onclick = () => detail(byKey(c.dataset.k), () => explore())));
+}
+
+const ringHtml = (e) => {
+  if (!e) return dpi("down");
+  if (e.state === "done") return dpi("check");
+  if (e.state === "paused" || e.state === "error") return dpi("play");
+  const p = e.size ? Math.round((e.done / e.size) * 100) : 0;
+  return `<span class="pct">${p}%</span>`;
+};
+
+function paintDlButtons() {
+  document.querySelectorAll(".dlb").forEach((b) => { b.innerHTML = ringHtml(dl.get(b.dataset.id)); });
+}
+
+function dlAction(f, g) {
+  const e = dl.get(f.id);
+  if (!e) {
+    if (!dl.supported()) { toast("Downloads are not supported in this browser"); return; }
+    dl.start({ id: f.id, chat: f.chat, msg: f.msg, name: f.name, size: f.size, mime: f.mime, title: f.title }, { title: title(g.v), year: g.v.year, poster: g.v.poster, key: g.key, label: fileLine(f) });
+    toast("Download started");
+  } else if (e.state === "done") {
+    confirmBox("Remove download?", "The offline copy of this file will be deleted from this device.", "Remove", () => dl.remove(f.id));
+  } else if (e.state === "paused" || e.state === "error") dl.resume(f.id);
+  else dl.pause(f.id);
+}
+
+function dlRow(d, done) {
+  const p = d.size ? Math.round((d.done / d.size) * 100) : 0;
+  const sub = done ? [d.label, sz(d.size)].filter(Boolean).join(" • ") : (d.state === "error" ? d.err || "Failed" : d.state === "paused" ? "Paused • " : "") + sz(d.done) + " / " + sz(d.size);
+  return `<div class="dli" data-id="${esc(d.id)}"><div class="dlp">${d.poster ? `<img src="${tmdb.img(d.poster)}" alt="">` : ""}</div><div class="dlt"><b>${esc(d.title || "Video")}${d.year ? " (" + d.year + ")" : ""}</b><small>${esc(sub)}</small>${done ? "" : `<div class="pbar2"><i style="width:${p}%"></i></div>`}</div>${done ? `<button class="ib dlx" data-a="del" aria-label="Delete">${svg(IC.trash)}</button>` : `<button class="ib dlx" data-a="pp" aria-label="Pause or resume">${svg(d.state === "run" || d.state === "queued" ? DP.pause : DP.play)}</button><button class="ib dlx" data-a="del" aria-label="Cancel">${svg(IC.close)}</button>`}</div>`;
+}
+
+async function paintDl(offline) {
+  const list = $("dlist");
+  if (!list) return;
+  const items = dl.all();
+  const run = items.filter((d) => d.state !== "done"), done = items.filter((d) => d.state === "done");
+  document.querySelectorAll(".utabs button").forEach((b) => { b.classList.toggle("on", b.dataset.t === dlTab); b.textContent = (b.dataset.t === "run" ? "Downloading (" + run.length + ")" : "Offline (" + done.length + ")"); });
+  const cur = dlTab === "run" ? run : done;
+  list.innerHTML = cur.length ? cur.map((d) => dlRow(d, dlTab === "off")).join("")
+    : `<div class="empty">${svg(DP.down, "fi big")}<b>${dlTab === "run" ? "Nothing downloading" : "Nothing saved offline"}</b><p class="muted center">${dlTab === "run" ? "Open a movie and tap the download button to watch it without internet." : "Downloaded movies appear here and play without internet."}</p></div>`;
+  list.querySelectorAll(".dli").forEach((r) => {
+    const id = r.dataset.id, d = dl.get(id);
+    r.querySelector(".dlt").onclick = () => { if (d.state === "done") playOffline(d, offline); };
+    r.querySelectorAll(".dlx").forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();
+      if (b.dataset.a === "pp") { if (d.state === "run" || d.state === "queued") dl.pause(id); else dl.resume(id); }
+      else confirmBox(d.state === "done" ? "Remove download?" : "Cancel download?", "The saved data for this file will be deleted from this device.", "Remove", () => dl.remove(id));
+    }));
+  });
+  const u = await dl.usage();
+  const s = $("stor");
+  if (s) s.innerHTML = `<div class="stl"><span>Storage used by downloads</span><button id="fr" class="tbtn">Free up space</button><span>${u.quota ? sz(u.used) + " / " + sz(u.quota) : sz(u.used)}</span></div><div class="sbar"><i style="width:${u.quota ? Math.max(2, Math.min(100, (u.used / u.quota) * 100)) : 2}%"></i></div>`;
+  const fr = $("fr");
+  if (fr) fr.onclick = () => { dlTab = "off"; paintDl(offline); };
+}
+
+function playOffline(d, offline) {
+  const back = () => downloadsView(offline);
+  play(Object.assign({}, d.item), back, null);
+}
+
+function downloadsView(offline) {
+  curDetail = "";
+  view(`<h1 class="shead">Downloads</h1>
+    ${offline ? '<p class="muted">You are offline. Your downloaded movies still play.</p><div class="pad"><button class="btn small" onclick="location.reload()">Try again</button></div>' : ""}
+    <div class="utabs"><button data-t="run"></button><button data-t="off"></button></div>
+    <div id="dlist"></div>
+    <div id="stor" class="stor"></div>
+    ${offline ? "" : tabsHtml("dl")}`);
+  document.querySelectorAll(".utabs button").forEach((b) => (b.onclick = () => { dlTab = b.dataset.t; paintDl(offline); }));
+  paintDl(offline);
+  if (!offline) bindTabs();
+}
+
+dl.onChange(() => { paintDlButtons(); if ($("dlist")) paintDl(!document.querySelector(".tabs")); });
 
 function castHtml(v) {
   if (!v.cast || !v.cast.length) return "";
@@ -614,36 +801,80 @@ async function castPhotos(g, again) {
   } catch (e) {}
 }
 
-function detail(g, back) {
-  if (isSeries(g)) return seriesDetail(g, back);
-  curDetail = g.key;
+const sz = (b) => (b >= 1073741824 ? gb(b) : (b / 1048576).toFixed(1) + " MB");
+
+function fileLine(f) {
+  const t = f.name.toLowerCase(), o = [];
+  const q = /2160p|\b4k\b/.test(t) ? "4K" : /1080p/.test(t) ? "1080p" : /720p/.test(t) ? "720p" : /480p/.test(t) ? "480p" : "";
+  if (q) o.push(q);
+  const src = t.match(/blu-?ray|br-?rip|web-?dl|web-?rip|hdrip|hdtv|dvdrip|hd-?cam|\bcam\b|\bhdts\b/);
+  if (src) o.push(src[0].replace(/^blu-?ray$/, "BluRay").replace(/^br-?rip$/, "BRRip").replace(/^web-?dl$/, "WEB-DL").replace(/^web-?rip$/, "WEBRip").replace(/^hdrip$/, "HDRip").replace(/^hdtv$/, "HDTV").replace(/^dvdrip$/, "DVDRip").replace(/^hd-?cam$/, "HDCAM").replace(/^cam$/, "CAM").replace(/^hdts$/, "HDTS"));
+  const c = t.match(/x265|hevc|x264|h\.?264|av1/);
+  if (c) o.push(c[0] === "hevc" ? "HEVC" : c[0] === "av1" ? "AV1" : c[0][0] === "h" ? "H264" : c[0]);
+  ["hindi", "english", "tamil", "telugu", "malayalam", "kannada", "korean"].forEach((l) => { if (t.includes(l)) o.push(l[0].toUpperCase() + l.slice(1)); });
+  if (/\bsubs?\b|esub|msub/.test(t)) o.push("Subs");
+  return o.join(" • ") || "Video";
+}
+
+function dlBtn(f) {
+  return `<button class="dlb" data-id="${esc(f.id)}" aria-label="Download">${ringHtml(dl.get(f.id))}</button>`;
+}
+
+function fileCard(f, i, label, sub) {
+  return `<div class="fcard" data-i="${i}"><div class="ftx"><b>${esc(label)}${ud.seen[f.id] ? " ✓" : ""}</b><small>${esc(sub)}</small></div>${dlBtn(f)}</div>`;
+}
+
+function topBar(g) {
+  return `<button id="b" class="rb" aria-label="Back">${svg(IC.back)}</button><button id="fv" class="rb right" aria-label="Favorite">${svg(ud.fav[g.key] ? DP.heartOn : DP.heartOff)}</button>`;
+}
+
+function infoBlock(g, files, resume) {
   const v = g.v;
-  const files = g.files.slice().sort((a, b) => b.size - a.size);
-  const resumeFile = files.filter((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]).sort((a, b) => pos[b.id] - pos[a.id])[0];
-  const best = resumeFile || (settings.saver ? files[files.length - 1] : files[0]);
-  const again = () => detail(g, back);
-  view(`<div class="hero" ${v.backdrop ? `style="background-image:linear-gradient(#0000,#010314),url(${tmdb.img(v.backdrop, "w780")})"` : ""}>
-      <button id="b" class="ico">Back</button></div>
-    <div class="info ${v.poster ? "hasp" : ""}">${v.poster ? `<img class="pimg" src="${tmdb.img(v.poster)}" alt="">` : ""}<h1>${esc(title(v))}</h1>
-      <p class="muted nopad">${[year(v), v.runtime ? v.runtime + " min" : "", v.rating ? "★ " + v.rating.toFixed(1) : ""].filter(Boolean).join(" · ")}</p>
-      ${v.genres ? `<p class="muted nopad">${esc(v.genres)}</p>` : ""}
-      <button id="p" class="btn"><svg class="pl" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>${resumeFile ? "Resume" : "Play"}</button>
-      <div class="acts"><button id="wl" class="ghost">${ud.wl[g.key] ? "In watchlist" : "Add to watchlist"}</button><button id="fv" class="ghost">${ud.fav[g.key] ? "Favorite ♥" : "Favorite ♡"}</button><button id="sn" class="ghost">${watched(g) ? "Mark unwatched" : "Mark watched"}</button></div>
-      ${v.overview ? `<p>${esc(v.overview)}</p>` : ""}
-      ${castHtml(v)}
-      <h3>Files</h3>${files.map((f, i) => `<button class="file" data-i="${i}"><span>${esc(tags(f.name).join(" · ") || "Video")}${ud.seen[f.id] ? " ✓" : ""}</span><small>${gb(f.size)}</small></button>`).join("")}
-      ${tmdb.hasKey() ? '<button id="fix" class="ghost wide">Wrong movie? Pick another</button>' : ""}</div>`);
+  const meta = [year(v), (v.genres || "").split(", ").filter(Boolean).slice(0, 3).join(" • "), mins(v.runtime)].filter(Boolean).join("  •  ");
+  const saver = settings.saver && files.length ? `<p class="dnote">Data saver is on: Play uses the smallest file (${sz(files[files.length - 1].size)}).</p>` : "";
+  return `<h1>${esc(title(v))}</h1>
+    <div class="dmeta"><span>${esc(meta)}</span>${v.rating ? `<i class="rate big"><b>★</b> ${v.rating.toFixed(1)}</i>` : ""}</div>
+    <div class="dact2"><button id="p" class="btn play">${dpi("play")}${resume ? "Resume" : "Play"}</button><button id="wl" class="btn outl">${dpi(ud.wl[g.key] ? "check" : "add")}My List</button></div>
+    <button id="sn" class="eye">${dpi("eye")}${watched(g) ? "Mark as unwatched" : "Mark as watched"}</button>
+    ${saver}
+    ${v.overview ? `<p class="ov">${esc(v.overview)}</p>` : ""}`;
+}
+
+function wireTop(g, again, back) {
   $("b").onclick = back;
-  $("p").onclick = () => play(best, again);
-  $("wl").onclick = () => { ud.wl[g.key] = !ud.wl[g.key]; saveUd(); again(); };
   $("fv").onclick = () => { ud.fav[g.key] = !ud.fav[g.key]; saveUd(); again(); };
+  $("wl").onclick = () => { ud.wl[g.key] = !ud.wl[g.key]; saveUd(); again(); };
   $("sn").onclick = () => {
     const on = !watched(g);
     g.files.forEach((f) => { if (on) ud.seen[f.id] = 1; else { delete ud.seen[f.id]; pos[f.id] = 0; } });
     saveUd(); put(POS, JSON.stringify(pos)); again();
   };
-  document.querySelectorAll(".file").forEach((b) => (b.onclick = () => play(files[Number(b.dataset.i)], again)));
   document.querySelectorAll(".cm").forEach((b) => (b.onclick = () => person(b.dataset.p, again)));
+}
+
+function detail(g, back) {
+  if (isSeries(g)) return seriesDetail(g, back);
+  curDetail = g.key;
+  opened[g.key] = 1;
+  put("nwios_open", JSON.stringify(opened));
+  const v = g.v;
+  const files = g.files.slice().sort((a, b) => b.size - a.size);
+  const resumeFile = files.filter((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]).sort((a, b) => pos[b.id] - pos[a.id])[0];
+  const best = resumeFile || (settings.saver ? files[files.length - 1] : files[0]);
+  const again = () => detail(g, back);
+  view(`<div class="dhero" ${v.backdrop ? `style="background-image:linear-gradient(#0000 45%, #010314), url(${tmdb.img(v.backdrop, "w780")})"` : ""}>${topBar(g)}</div>
+    <div class="dinfo">${infoBlock(g, files, resumeFile)}
+      ${castHtml(v)}
+      <h3 class="sec2">Available files (${files.length})</h3>
+      ${files.map((f, i) => fileCard(f, i, fileLine(f), sz(f.size))).join("")}
+      ${tmdb.hasKey() ? '<button id="fix" class="ghost wide">Wrong movie? Pick another</button>' : ""}</div>`);
+  wireTop(g, again, back);
+  $("p").onclick = () => play(best, again, null, g);
+  document.querySelectorAll(".fcard").forEach((c) => {
+    const f = files[Number(c.dataset.i)];
+    c.onclick = () => play(f, again, null, g);
+    c.querySelector(".dlb").onclick = (e) => { e.stopPropagation(); dlAction(f, g); };
+  });
   const fx = $("fix");
   if (fx) fx.onclick = () => fix(g, back);
   castPhotos(g, again);
@@ -659,14 +890,16 @@ function episodes(g) {
   return [...map.values()].sort((a, b) => a.s - b.s || a.e - b.e);
 }
 
-function playEp(eps, i, back) {
+function playEp(eps, i, back, g) {
   const fl = eps[i].files.slice().sort((a, b) => b.size - a.size);
   const f = settings.saver ? fl[fl.length - 1] : fl[0];
-  play(f, back, eps[i + 1] ? () => playEp(eps, i + 1, back) : null);
+  play(f, back, eps[i + 1] ? () => playEp(eps, i + 1, back, g) : null, g);
 }
 
 function seriesDetail(g, back, season) {
   curDetail = g.key;
+  opened[g.key] = 1;
+  put("nwios_open", JSON.stringify(opened));
   const v = g.v;
   const eps = episodes(g);
   const seasons = [...new Set(eps.map((e) => e.s))];
@@ -674,24 +907,21 @@ function seriesDetail(g, back, season) {
   const cur = season !== undefined ? season : open ? open.s : seasons[0];
   const again = () => seriesDetail(g, back, cur);
   const shown = eps.filter((e) => e.s === cur);
-  view(`<div class="hero" ${v.backdrop ? `style="background-image:linear-gradient(#0000,#010314),url(${tmdb.img(v.backdrop, "w780")})"` : ""}>
-      <button id="b" class="ico">Back</button></div>
-    <div class="info ${v.poster ? "hasp" : ""}">${v.poster ? `<img class="pimg" src="${tmdb.img(v.poster)}" alt="">` : ""}<h1>${esc(title(v))}</h1>
-      <p class="muted nopad">${[year(v), v.runtime ? v.runtime + " min" : "", v.rating ? "★ " + v.rating.toFixed(1) : "", eps.length + " episodes"].filter(Boolean).join(" · ")}</p>
-      ${v.genres ? `<p class="muted nopad">${esc(v.genres)}</p>` : ""}
-      <button id="p" class="btn"><svg class="pl" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>${open ? "Resume" : "Play"}</button>
-      <div class="acts"><button id="wl" class="ghost">${ud.wl[g.key] ? "In watchlist" : "Add to watchlist"}</button><button id="fv" class="ghost">${ud.fav[g.key] ? "Favorite ♥" : "Favorite ♡"}</button></div>
-      ${v.overview ? `<p>${esc(v.overview)}</p>` : ""}
+  view(`<div class="dhero" ${v.backdrop ? `style="background-image:linear-gradient(#0000 45%, #010314), url(${tmdb.img(v.backdrop, "w780")})"` : ""}>${topBar(g)}</div>
+    <div class="dinfo">${infoBlock(g, [], open)}
       <div class="chips">${seasons.map((s) => `<button class="chip ${s === cur ? "on" : ""}" data-s="${s}">${s ? "Season " + s : "Episodes"}</button>`).join("")}</div>
-      <h3>Episodes</h3>${shown.map((e) => `<button class="file" data-i="${eps.indexOf(e)}"><span>${e.e ? "E" + e.e : "Episode"}${e.files.every((f) => ud.seen[f.id]) ? " ✓" : ""}</span><small>${esc(tags(e.files[0].name).join(" · "))} · ${gb(e.files[0].size)}</small></button>`).join("")}
+      <h3 class="sec2">Episodes (${shown.length})</h3>
+      ${shown.map((e) => { const f = e.files.slice().sort((a, b) => b.size - a.size)[0]; return fileCard(f, eps.indexOf(e), e.e ? "Episode " + e.e : "Episode", fileLine(f) + " • " + sz(f.size)); }).join("")}
       ${castHtml(v)}</div>`);
-  $("b").onclick = back;
-  $("p").onclick = () => playEp(eps, Math.max(0, eps.indexOf(open || shown[0] || eps[0])), again);
-  $("wl").onclick = () => { ud.wl[g.key] = !ud.wl[g.key]; saveUd(); again(); };
-  $("fv").onclick = () => { ud.fav[g.key] = !ud.fav[g.key]; saveUd(); again(); };
+  wireTop(g, again, back);
+  $("p").onclick = () => playEp(eps, Math.max(0, eps.indexOf(open || shown[0] || eps[0])), again, g);
   document.querySelectorAll(".chip[data-s]").forEach((b) => (b.onclick = () => seriesDetail(g, back, Number(b.dataset.s))));
-  document.querySelectorAll(".cm").forEach((b) => (b.onclick = () => person(b.dataset.p, again)));
-  document.querySelectorAll(".file").forEach((b) => (b.onclick = () => playEp(eps, Number(b.dataset.i), again)));
+  document.querySelectorAll(".fcard").forEach((c) => {
+    const e = eps[Number(c.dataset.i)];
+    const f = e.files.slice().sort((a, b) => b.size - a.size)[0];
+    c.onclick = () => playEp(eps, Number(c.dataset.i), again, g);
+    c.querySelector(".dlb").onclick = (ev) => { ev.stopPropagation(); dlAction(f, g); };
+  });
   castPhotos(g, again);
 }
 
@@ -776,25 +1006,34 @@ async function rescan(opts) {
   if (!failed) localStorage.removeItem("nwios_scanning");
   if (!o.quiet && !failed) toast(added ? added + " new " + (added === 1 ? "movie" : "movies") + " added" : "No new movies found");
   if (o.quiet && !added) { paintStatus(); return; }
-  if (onHome()) home(); else paintStatus();
+  if (onHome()) home(); else if (onExplore()) explore(); else paintStatus();
   enrichAll();
 }
 
 async function enrichAll() {
   if (!tmdb.hasKey()) return;
   const store = () => put(LIB, JSON.stringify(library));
-  await tmdb.enrich(library, (n, t) => { const e = $("status"); if (e && !scanSt.on) e.textContent = "Fetching movie details… " + n + "/" + t; }, store);
-  if ($("status") && onHome()) home();
+  await tmdb.enrich(library, (n, t) => { enrSt.on = true; enrSt.n = n; enrSt.t = t; paintStatus(); }, store);
+  const wasOn = enrSt.on;
+  enrSt.on = false;
+  if (wasOn && onHome()) home(); else if (wasOn && onExplore()) explore(); else paintStatus();
 }
 
-function play(m, back, next) {
-  const g = groups().find((x) => x.files.some((f) => f.id === m.id));
-  player.play({
-    m, label: esc(g ? title(g.v) : m.title), title: g ? title(g.v) : m.title, poster: g && g.v.poster ? tmdb.img(g.v.poster) : "", settings, pos, view, back,
+function play(m, back, next, g0) {
+  const g = g0 || groups().find((x) => x.files.some((f) => f.id === m.id));
+  const versions = g && !isSeries(g) ? g.files.slice().sort((a, b) => b.size - a.size).map((f) => ({ id: f.id, name: f.name, size: f.size, label: fileLine(f), file: f })) : null;
+  lastPl[m.id] = Date.now();
+  put("nwios_last", JSON.stringify(lastPl));
+  const go = (item) => player.play({
+    m: item, label: esc(g ? title(g.v) : m.title), title: g ? title(g.v) : m.title, poster: g && g.v.poster ? tmdb.img(g.v.poster) : "", settings, pos, view, back,
+    versions,
+    onSwitch: (f, t) => { pos[f.id] = Math.max(pos[f.id] || 0, Math.floor(t)); play(g.files.find((x) => x.id === f.id), back, next, g); },
     save: () => { save(); put(POS, JSON.stringify(pos)); touchSync(); },
     next, onSeen: (f) => { ud.seen[f.id] = 1; saveUd(); },
     onWatch: (s) => { const d = new Date().toISOString().slice(0, 10); wt[d] = Math.round((wt[d] || 0) + s); put("nwios_time", JSON.stringify(wt)); touchSync(); }
   });
+  if (dl.isDone(m.id)) dl.file(m.id).then((file) => go(Object.assign({}, m, { localFile: file }))).catch(() => go(m));
+  else go(m);
 }
 
 const SI = {
@@ -944,7 +1183,7 @@ function settingsPage(k) {
       grp("Saved movie details (kept until you delete them)") + crow("cd", "Movie information", lib + " KB", "Kept so TMDB is not asked again", "Delete") +
       grp("Cache (safe to clear)") + crow("cl", "Movie index", lib + " KB", "Your lists & history are kept", "Clear") +
       crow("ch", "Watch history", hist + " KB", "Progress, watched marks and watch time", "Clear") +
-      grp("Total") + `<p class="note big">Library: ${lib} KB   •   Lists and history: ${hist} KB</p>`, back);
+      grp("Total") + arow("", "Movie library", lib + " KB") + arow("", "Lists and history", hist + " KB"), back);
     $("cd").onclick = () => confirmBox("Delete saved movie details?", "Posters and details will have to be fetched from TMDB again, which can take a while for a big library.", "Delete", () => {
       library.forEach((m) => ["tmdb", "series", "name", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x]));
       put(LIB, JSON.stringify(library)); toast("Saved details deleted"); settingsPage("storage"); enrichAll();
