@@ -85,7 +85,7 @@ async function details(id, kind = "movie") {
     tmdb: o.id, series: tv, name: o.title || o.name || "", year: yearOf(o.release_date || o.first_air_date), rating: o.vote_average || 0,
     overview: o.overview || "", poster: o.poster_path || "", backdrop: o.backdrop_path || "",
     runtime: tv ? (o.episode_run_time || [])[0] || 0 : o.runtime || 0,
-    genres: (o.genres || []).map((g) => g.name).join(", "), cast: crew.concat(cast)
+    genres: (o.genres || []).map((g) => g.name).join(", "), cast: crew.concat(cast), pop: o.popularity || 0
   };
 }
 
@@ -99,15 +99,35 @@ async function matchOne(m) {
 
 export async function enrich(items, onProgress, onSave) {
   const todo = items.filter((m) => !m.tmdb && !m.tried);
+  const again = new Map();
+  items.forEach((m) => {
+    if (m.tmdb > 0 && m.pop === undefined) {
+      const k = (m.series ? "tv" : "movie") + m.tmdb;
+      if (!again.has(k)) again.set(k, []);
+      again.get(k).push(m);
+    }
+  });
+  const redo = [...again.values()];
+  const total = todo.length + redo.length;
   let done = 0, failed = 0, stop = false;
   const worker = async () => {
-    while (todo.length && !stop && failed < 8) {
-      const m = todo.shift();
-      try { await matchOne(m); m.tried = Date.now(); }
-      catch (e) { if (e.message === "auth") stop = true; else failed++; }
-      done++;
-      onProgress(done, done + todo.length);
-      if (done % 15 === 0) onSave();
+    while ((todo.length || redo.length) && !stop && failed < 8) {
+      try {
+        if (todo.length) {
+          const m = todo.shift();
+          try { await matchOne(m); m.tried = Date.now(); } catch (e) { if (e.message === "auth") stop = true; else failed++; }
+        } else {
+          const list = redo.shift();
+          try {
+            const d = await details(list[0].tmdb, list[0].series ? "tv" : "movie");
+            list.forEach((m) => Object.assign(m, d));
+          } catch (e) { if (e.message === "auth") stop = true; else failed++; }
+        }
+      } finally {
+        done++;
+        onProgress(done, total);
+        if (done % 15 === 0) onSave();
+      }
     }
   };
   await Promise.all([worker(), worker(), worker()]);
