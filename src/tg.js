@@ -105,12 +105,12 @@ export async function me() {
   try { const u = await client.getMe(); return u.firstName || u.username || ""; } catch (e) { return ""; }
 }
 
-export async function scan(onProgress, cursor = {}, known = []) {
+export async function scan(onProgress, cursor = {}, known = [], onBatch = () => {}) {
   const dialogs = await loadChats();
-  const raws = [], out = [], seen = new Set();
+  const out = [], seen = new Set(), names = [];
   let next = 0, done = 0, errors = 0, docs = 0, passed = 0, firstErr = "";
 
-  const take = (d, m) => {
+  const take = (d, m, bucket) => {
     const doc = m.media && m.media.document;
     if (!doc || !doc.attributes) return;
     docs++;
@@ -126,10 +126,10 @@ export async function scan(onProgress, cursor = {}, known = []) {
     if (seen.has(r.id)) return;
     seen.add(r.id);
     r.cap = m.message || "";
-    raws.push(r);
+    bucket.push(r);
   };
 
-  const pages = async (d, F, prev) => {
+  const pages = async (d, F, prev, bucket) => {
     const peer = d.inputEntity || (await client.getInputEntity(d.entity));
     let offsetId = 0, top = prev;
     for (let i = 0; i < 40; i++) {
@@ -137,33 +137,44 @@ export async function scan(onProgress, cursor = {}, known = []) {
         peer, q: "", filter: new F(), minDate: 0, maxDate: 0, offsetId, addOffset: 0, limit: 100, maxId: 0, minId: prev, hash: bigInt(0)
       }));
       const msgs = res.messages || [];
-      msgs.forEach((m) => { if (m.id > top) top = m.id; take(d, m); });
+      msgs.forEach((m) => { if (m.id > top) top = m.id; take(d, m, bucket); });
       if (msgs.length < 100) break;
       offsetId = msgs[msgs.length - 1].id;
     }
     return top;
   };
 
+  const finish = (bucket) => {
+    if (!bucket.length) return [];
+    bucket.forEach((r) => names.push(r.name));
+    learnHandles(names.concat(known));
+    const got = [];
+    for (const r of bucket) {
+      const p = parse(r.name, r.cap);
+      if (p) got.push(Object.assign(r, p));
+    }
+    out.push(...got);
+    return got;
+  };
+
   const worker = async () => {
     while (next < dialogs.length) {
       const d = dialogs[next++];
       const key = d.id.toString(), prev = cursor[key] || 0;
+      const bucket = [];
       let top = prev, ok = true;
       for (const F of [Api.InputMessagesFilterVideo, Api.InputMessagesFilterDocument]) {
-        try { top = Math.max(top, await pages(d, F, prev)); } catch (e) { ok = false; errors++; firstErr = firstErr || String((e && (e.errorMessage || e.message)) || e); }
+        try { top = Math.max(top, await pages(d, F, prev, bucket)); } catch (e) { ok = false; errors++; firstErr = firstErr || String((e && (e.errorMessage || e.message)) || e); }
       }
       if (ok) cursor[key] = top;
+      const got = finish(bucket);
       done++;
-      onProgress(raws.length, done, dialogs.length);
+      onBatch(got);
+      onProgress(out.length, done, dialogs.length);
     }
   };
   await Promise.all([worker(), worker(), worker()]);
 
-  learnHandles(raws.map((r) => r.name).concat(known));
-  for (const r of raws) {
-    const p = parse(r.name, r.cap);
-    if (p) out.push(Object.assign(r, p));
-  }
   out.sort((a, b) => b.at - a.at);
   return { items: out, errors, firstErr, chats: dialogs.length, docs, passed };
 }
