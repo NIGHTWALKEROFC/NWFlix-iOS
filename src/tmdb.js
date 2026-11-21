@@ -78,9 +78,9 @@ async function details(id, kind = "movie") {
   const tv = kind === "tv";
   const o = await get("/" + kind + "/" + id, { append_to_response: "credits" });
   const crew = tv
-    ? (o.created_by || []).slice(0, 2).map((c) => ({ n: c.name, c: "Creator" }))
-    : ((o.credits && o.credits.crew) || []).filter((c) => c.job === "Director").slice(0, 2).map((c) => ({ n: c.name, c: "Director" }));
-  const cast = ((o.credits && o.credits.cast) || []).slice(0, 10).map((c) => ({ n: c.name, c: c.character || "" }));
+    ? (o.created_by || []).slice(0, 2).map((c) => ({ n: c.name, c: "Creator", p: c.profile_path || "" }))
+    : ((o.credits && o.credits.crew) || []).filter((c) => c.job === "Director").slice(0, 2).map((c) => ({ n: c.name, c: "Director", p: c.profile_path || "" }));
+  const cast = ((o.credits && o.credits.cast) || []).slice(0, 10).map((c) => ({ n: c.name, c: c.character || "", p: c.profile_path || "" }));
   return {
     tmdb: o.id, series: tv, name: o.title || o.name || "", year: yearOf(o.release_date || o.first_air_date), rating: o.vote_average || 0,
     overview: o.overview || "", poster: o.poster_path || "", backdrop: o.backdrop_path || "",
