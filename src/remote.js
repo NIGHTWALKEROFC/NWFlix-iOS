@@ -32,12 +32,12 @@ export async function signInGoogle() {
 export const logout = () => signOut(auth);
 
 export function watchConfig(cb) {
-  return onSnapshot(doc(db, "config", "ios"), (s) => {
+  return onSnapshot(doc(db, "config", "app"), (s) => {
     const d = s.exists() ? s.data() : {};
     cb({
-      maintenanceOn: !!d.maintenanceOn, maintenanceTitle: d.maintenanceTitle || "", maintenanceMessage: d.maintenanceMessage || "",
+      maintenanceOn: !!d.maintenanceIosOn, maintenanceTitle: d.maintenanceIosTitle || "", maintenanceMessage: d.maintenanceIosMessage || "",
       annId: d.annId || "", annTitle: d.annTitle || "", annMessage: d.annMessage || "",
-      annButtonText: d.annButtonText || "", annButtonUrl: d.annButtonUrl || "", annDismissible: d.annDismissible !== false, annCountries: d.annCountries || "",
+      annButtonText: d.annButtonText || "", annButtonUrl: d.annButtonUrl || "", annDismissible: d.annDismissible !== false, annCountry: d.annCountry || "",
       annExpiresAt: d.annExpiresAt && d.annExpiresAt.toMillis ? d.annExpiresAt.toMillis() : 0
     });
   }, () => {});
