@@ -6,6 +6,7 @@ import * as legal from "./legal.js";
 import * as guides from "./guides.js";
 import * as cty from "./countries.js";
 import * as dl from "./downloads.js";
+import { BRAND } from "./brand.js";
 
 const root = document.getElementById("app");
 const put = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -54,12 +55,13 @@ document.addEventListener("touchmove", (e) => {
 }, { passive: true });
 document.addEventListener("touchend", () => { if (pullY !== null && pullD > 80) rescan(); pullY = null; ptr.style.transform = ""; });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const LANGS = { tam: "Tamil", tamil: "Tamil", tel: "Telugu", telugu: "Telugu", hin: "Hindi", hindi: "Hindi", mal: "Malayalam", malayalam: "Malayalam", kan: "Kannada", kannada: "Kannada", eng: "English", english: "English", kor: "Korean", korean: "Korean", jap: "Japanese", japanese: "Japanese", chi: "Chinese", chinese: "Chinese", spa: "Spanish", spanish: "Spanish", fre: "French", french: "French", ger: "German", german: "German", ara: "Arabic", arabic: "Arabic", tha: "Thai", thai: "Thai", multi: "Multi audio", dual: "Dual audio" };
 const tags = (n) => {
   const t = n.toLowerCase(), o = [];
   const q = /2160p|\b4k\b/.test(t) ? "4K" : /1080p/.test(t) ? "1080p" : /720p/.test(t) ? "720p" : /480p/.test(t) ? "480p" : "";
   if (q) o.push(q);
   if (/x265|hevc/.test(t)) o.push("HEVC");
-  ["hindi", "english", "tamil", "telugu", "malayalam", "kannada", "korean"].forEach((l) => { if (t.includes(l)) o.push(l[0].toUpperCase() + l.slice(1)); });
+  t.split(/[^a-z]+/).forEach((w) => { const l = LANGS[w]; if (l && !o.includes(l)) o.push(l); });
   return o;
 };
 const gb = (b) => (b / 1073741824).toFixed(2) + " GB";
@@ -143,9 +145,9 @@ function installSteps() {
 function installGate() {
   if (isStandalone()) return false;
   const draw = () => {
-    view(`<div class="login lg"><img class="lg-logo" src="icon.png" width="72" height="72" alt=""><div class="lg-brand">NWFLIX</div>
+    view(`<div class="login lg"><img class="lg-logo" src="${BRAND}" width="72" height="72" alt=""><div class="lg-brand">NWFLIX</div>
       <h1>Add NWFlix iOS to your Home Screen</h1>
-      <p class="sub">NWFlix iOS works like a real app. Add it to your Home Screen and open it from there to continue.</p>
+      <p class="lsub">NWFlix iOS works like a real app. Add it to your Home Screen and open it from there to continue.</p>
       <div class="gatebox">${installSteps()}</div></div>`);
     const ai = $("ai");
     if (ai) ai.onclick = async () => {
@@ -155,7 +157,7 @@ function installGate() {
       if (r && r.outcome === "accepted") done(); else draw();
     };
   };
-  const done = () => view(`<div class="login lg"><img class="lg-logo" src="icon.png" width="72" height="72" alt=""><h1>NWFlix iOS is installed</h1><p class="sub">Open NWFlix iOS from your Home Screen to continue.</p></div>`);
+  const done = () => view(`<div class="login lg"><img class="lg-logo" src="${BRAND}" width="72" height="72" alt=""><h1>NWFlix iOS is installed</h1><p class="lsub">Open NWFlix iOS from your Home Screen to continue.</p></div>`);
   onInstallReady = () => { if ($("ai") === null && document.querySelector(".gatebox")) draw(); };
   addEventListener("appinstalled", done);
   draw();
@@ -163,7 +165,7 @@ function installGate() {
 }
 
 function a2hs() {
-  const d = dialog(`<img src="icon.png" width="64" height="64" alt="" style="border-radius:16px;align-self:center"><h3 style="text-align:center">Add NWFlix iOS to your Home Screen</h3><p class="dtx">Open it like a real app: full screen, with no browser bar.</p>${isStandalone() ? '<p class="dtx">NWFlix iOS is already on your Home Screen.</p>' : installSteps()}<div class="dact"><button class="tbtn" id="dx">Got it</button></div>`);
+  const d = dialog(`<img src="${BRAND}" width="64" height="64" alt="" style="border-radius:16px;align-self:center"><h3 style="text-align:center">Add NWFlix iOS to your Home Screen</h3><p class="dtx">Open it like a real app: full screen, with no browser bar.</p>${isStandalone() ? '<p class="dtx">NWFlix iOS is already on your Home Screen.</p>' : installSteps()}<div class="dact"><button class="tbtn" id="dx">Got it</button></div>`);
   d.box.querySelector("#dx").onclick = d.close;
   const ai = d.box.querySelector("#ai");
   if (ai) ai.onclick = async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; d.close(); };
@@ -174,7 +176,7 @@ let loginPhone = "";
 const O = { res: null, state: "idle", timer: 0, setState: null };
 
 function loginHead(h, sub) {
-  return `<img class="lg-logo" src="icon.png" width="64" height="64" alt=""><div class="lg-brand">NWFLIX</div><h1>${h}</h1><p class="sub">${sub}</p>`;
+  return `<img class="lg-logo" src="${BRAND}" width="64" height="64" alt=""><div class="lg-brand">NWFLIX</div><h1>${h}</h1><p class="lsub">${sub}</p>`;
 }
 
 function infoRows() {
@@ -213,7 +215,6 @@ function paintCc() {
 }
 
 function phoneScreen(text) {
-  const c = cty.find(loginCc);
   view(`<div class="login lg">${loginHead("Connect with Telegram", "Log in with your Telegram account to access your movies.")}
     <div class="phone"><button id="cc" class="ccb"></button><input id="v" type="tel" inputmode="tel" placeholder="Phone number" autocomplete="tel-national" maxlength="18" value="${esc(loginPhone)}"></div>
     <p id="cchint" class="hint"></p>
@@ -341,7 +342,7 @@ function ask(kind, text) {
 
 async function gate() {
   if (await rc.ready()) return;
-  view(`<div class="login lg"><img class="lg-logo" src="icon.png" width="72" height="72" alt=""><div class="lg-brand">NWFLIX</div><h1>One last step</h1><p class="sub">Sign in with your email</p>
+  view(`<div class="login lg"><img class="lg-logo" src="${BRAND}" width="72" height="72" alt=""><div class="lg-brand">NWFLIX</div><h1>One last step</h1><p class="lsub">Sign in with your email</p>
     <button id="g" class="btn lgbtn">Continue with Google</button><p id="err" class="bad"></p></div>`);
   await new Promise((res) => {
     $("g").onclick = async () => {
@@ -450,6 +451,15 @@ async function boot() {
   await tg.startStreaming(() => library);
   booted = true;
   home();
+  dl.resumeAll();
+  if (get("nwios_nm") !== "1") {
+    library.forEach((x) => { if (x.tmdb > 0 && x.tname === undefined) x.tname = x.name; });
+    put(LIB, JSON.stringify(library));
+    cursor = {};
+    put("nwios_cur", "{}");
+    put("nwios_nm", "1");
+    put("nwios_scanning", "1");
+  }
   const unfinished = get("nwios_scanning") === "1";
   if (!library.length) rescan(); else { enrichAll(); rescan({ quiet: !unfinished }); }
 }
@@ -459,11 +469,11 @@ const saveUd = () => { put("nwios_user", JSON.stringify(ud)); touchSync(); };
 let scanNote = "";
 let userName = "";
 let cursor = jp("nwios_cur", {});
-let scanning = false, homeY = 0, restoreY = null, syncTimer = 0;
+let scanning = false, restoreY = null, syncTimer = 0;
 const scanSt = { on: false, phase: "", found: 0, quiet: false };
 const wt = jp("nwios_time", {});
 let sortBy = "added", fGenre = "", fLang = "", fQual = "", fType = "", exQ = "";
-let curDetail = "", heroT = 0, dlTab = "off";
+let curDetail = "", heroT = 0, dlTab = "run";
 const lastPl = jp("nwios_last", {});
 const opened = jp("nwios_open", {});
 let baseAt = Number(get("nwios_base") || 0);
@@ -517,7 +527,7 @@ function groups() {
 
 const isSeries = (g) => g.v.series || g.v.season > 0;
 const byKey = (k) => groups().find((g) => g.key === k);
-const title = (m) => m.name || m.title;
+const title = (m) => m.tname || m.title;
 const year = (m) => m.year || "";
 const watched = (g) => g.files.every((f) => ud.seen[f.id]);
 const started = (g) => g.files.some((f) => (pos[f.id] || 0) > 5 && !ud.seen[f.id]);
@@ -537,12 +547,8 @@ function cardHtml(g, bar) {
     <span class="t">${esc(title(v))}</span><span class="s">${year(v)}</span></button>`;
 }
 
-function select(id, label, opts, cur) {
-  return `<select id="${id}"><option value="">${label}</option>${opts.map((o) => `<option ${o === cur ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
-}
-
 const TABS = [["all", "Home"], ["ex", "Explore"], ["dl", "Downloads"], ["lib", "My List"], ["set", "Settings"]];
-const tabsHtml = (on) => `<nav class="tabs">${TABS.map(([k, n]) => `<button data-t="${k}" class="${k === on ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`;
+const tabsHtml = (on) => `<div class="tail"></div><nav class="tabs">${TABS.map(([k, n]) => `<button data-t="${k}" class="${k === on ? "on" : ""}">${ICONS[k]}<span>${n}</span></button>`).join("")}</nav>`;
 const bindTabs = () => document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => {
   const k = b.dataset.t;
   if (k === "lib") libraryView(); else if (k === "set") settingsView(); else if (k === "ex") explore(); else if (k === "dl") downloadsView(); else home();
@@ -634,7 +640,7 @@ function home() {
       rowHtml("Recently Added (" + recent.length + ")", recent.slice(0, 80), "added") +
       (hide && unmatchedN ? `<button class="notice" id="unm"><span>${unmatchedN} ${unmatchedN === 1 ? "file has" : "files have"} no movie details yet. Review them in Explore.</span>${svg(IC.chev, "fi")}</button>` : "");
   }
-  view(`<header class="bar"><img class="bmark" src="brand.png" alt=""><span class="bname">NWFLIX</span><div class="hb"><button id="refresh" class="ib" aria-label="Refresh">${busy ? SPIN : svg(IC.refresh)}</button><button id="srch" class="ib" aria-label="Search">${svg(IC.search)}</button><button id="av" class="avs" aria-label="Settings">${esc((userName || "N")[0].toUpperCase())}</button></div></header>
+  view(`<header class="bar"><img class="bmark" src="${BRAND}" alt=""><span class="bname">NWFLIX</span><div class="hb"><button id="refresh" class="ib" aria-label="Refresh">${busy ? SPIN : svg(IC.refresh)}</button><button id="srch" class="ib" aria-label="Search">${svg(IC.search)}</button><button id="av" class="avs" aria-label="Settings">${esc((userName || "N")[0].toUpperCase())}</button></div></header>
     <div id="rmenu" class="menu hidden"><button id="m1">Check for new movies</button><button id="m2">Full rescan (slower)</button></div>
     <div id="status" class="stat-row"></div>
     ${body}
@@ -676,6 +682,32 @@ function home() {
   if (restoreY !== null) { window.scrollTo(0, restoreY); restoreY = null; }
 }
 
+const EXI = {
+  sort: "M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z",
+  filter: "M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z",
+  shuffle: "M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"
+};
+
+function filterDialog(langs) {
+  let l = fLang, q = fQual, t = fType;
+  const chips = (arr, cur, k) => arr.map((x) => `<button class="fc ${x === cur ? "on" : ""}" data-k="${k}" data-v="${esc(x)}">${esc(x)}</button>`).join("");
+  const d = dialog(`<h3>Filters</h3>
+    ${langs.length ? `<h4 class="fh">Language</h4><div class="fcs">${chips(langs, l, "l")}</div>` : ""}
+    <h4 class="fh">Quality</h4><div class="fcs">${chips(QUALITIES, q, "q")}</div>
+    <h4 class="fh">Type</h4><div class="fcs">${chips(["Movies", "Series"], t, "t")}</div>
+    <div class="dact"><button class="tbtn" id="fr">Reset</button><button class="tbtn" id="fa">Apply</button></div>`);
+  d.box.querySelectorAll(".fc").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.k, v = b.dataset.v;
+    const on = b.classList.contains("on");
+    d.box.querySelectorAll('.fc[data-k="' + k + '"]').forEach((x) => x.classList.remove("on"));
+    if (!on) b.classList.add("on");
+    const val = on ? "" : v;
+    if (k === "l") l = val; else if (k === "q") q = val; else t = val;
+  }));
+  d.box.querySelector("#fr").onclick = () => { fLang = ""; fQual = ""; fType = ""; d.close(); explore(); };
+  d.box.querySelector("#fa").onclick = () => { fLang = l; fQual = q; fType = t; d.close(); explore(); };
+}
+
 function explore(focus) {
   curDetail = "";
   const all = groups();
@@ -687,25 +719,28 @@ function explore(focus) {
     (!fQual || g.files.some((f) => tags(f.name).includes(fQual))) &&
     (!fType || (fType === "Series") === isSeries(g))
   ).sort(SORTS[sortBy]);
-  const genres = [...new Set(all.flatMap((g) => (g.v.genres || "").split(", ").filter(Boolean)))].sort().concat(all.some((g) => !matchedG(g)) ? ["Unmatched"] : []);
-  const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((t) => !QUALITIES.includes(t) && t !== "HEVC").sort();
-  view(`<h1 class="shead">Explore</h1>
-    <div class="search"><input id="exq" type="search" placeholder="Search movies or cast" value="${esc(exQ)}"></div>
-    <div class="filters">
-      <select id="so">${Object.entries(SORT_NAMES).map(([k, n]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${n}</option>`).join("")}</select>
-      ${select("fg", "Genre", genres, fGenre)}${select("fl", "Language", langs, fLang)}${select("fq", "Quality", QUALITIES, fQual)}${select("ft", "Type", ["Movies", "Series"], fType)}
-    </div>
+  const count = new Map();
+  all.forEach((g) => (g.v.genres || "").split(", ").filter(Boolean).forEach((x) => count.set(x, (count.get(x) || 0) + 1)));
+  const genres = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14).map((x) => x[0]);
+  const unm = all.filter((g) => !matchedG(g)).length;
+  const langs = [...new Set(all.flatMap((g) => g.files.flatMap((f) => tags(f.name))))].filter((x) => !QUALITIES.includes(x) && x !== "HEVC").sort();
+  const nf = (fLang ? 1 : 0) + (fQual ? 1 : 0) + (fType ? 1 : 0);
+  const gchip = (v, n) => `<button class="gc ${fGenre === v ? "on" : ""}" data-g="${esc(v)}">${esc(n)}</button>`;
+  view(`<header class="ehead"><h1>Explore</h1><button id="exs" class="ib" aria-label="Search">${svg(IC.search)}</button></header>
+    <div id="exsb" class="search ${exQ || focus ? "" : "hidden"}"><input id="exq" type="search" placeholder="Search movies or cast" value="${esc(exQ)}"></div>
+    <div class="gchips">${gchip("", "All")}${unm ? gchip("Unmatched", "Unmatched · " + unm) : ""}${genres.map((x) => gchip(x, x)).join("")}</div>
+    <div class="erow"><button id="esort" class="ech on">${svg(EXI.sort)}${esc(SORT_NAMES[sortBy])}</button><button id="efil" class="ech ${nf ? "on" : ""}">${svg(EXI.filter)}Filters${nf ? " · " + nf : ""}</button><span class="sp"></span><button id="eshuf" class="ib" aria-label="Surprise me">${svg(EXI.shuffle)}</button><span class="ecount">${list.length} ${list.length === 1 ? "title" : "titles"}</span></div>
     <main class="grid">${list.map((g) => cardHtml(g, false)).join("")}</main>
     ${list.length ? "" : '<p class="muted center">Nothing matches.</p>'}
     ${tabsHtml("ex")}`);
   const qi = $("exq");
   qi.oninput = () => { exQ = qi.value; explore(true); };
   if (focus) { qi.focus(); qi.setSelectionRange(exQ.length, exQ.length); }
-  $("so").onchange = (e) => { sortBy = e.target.value; explore(); };
-  $("fg").onchange = (e) => { fGenre = e.target.value; explore(); };
-  $("fl").onchange = (e) => { fLang = e.target.value; explore(); };
-  $("fq").onchange = (e) => { fQual = e.target.value; explore(); };
-  $("ft").onchange = (e) => { fType = e.target.value; explore(); };
+  $("exs").onclick = () => { $("exsb").classList.toggle("hidden"); if (!$("exsb").classList.contains("hidden")) qi.focus(); };
+  document.querySelectorAll(".gc").forEach((b) => (b.onclick = () => { fGenre = b.dataset.g; explore(); }));
+  $("esort").onclick = () => choose("Sort by", Object.entries(SORT_NAMES), sortBy, (v) => { sortBy = v; explore(); });
+  $("efil").onclick = () => filterDialog(langs);
+  $("eshuf").onclick = () => { if (list.length) detail(list[Math.floor(Math.random() * list.length)], () => explore()); };
   bindTabs();
   document.querySelectorAll(".card").forEach((c) => (c.onclick = () => detail(byKey(c.dataset.k), () => explore())));
 }
@@ -740,29 +775,54 @@ function dlRow(d, done) {
   return `<div class="dli" data-id="${esc(d.id)}"><div class="dlp">${d.poster ? `<img src="${tmdb.img(d.poster)}" alt="">` : ""}</div><div class="dlt"><b>${esc(d.title || "Video")}${d.year ? " (" + d.year + ")" : ""}</b><small>${esc(sub)}</small>${done ? "" : `<div class="pbar2"><i style="width:${p}%"></i></div>`}</div>${done ? `<button class="ib dlx" data-a="del" aria-label="Delete">${svg(IC.trash)}</button>` : `<button class="ib dlx" data-a="pp" aria-label="Pause or resume">${svg(d.state === "run" || d.state === "queued" ? DP.pause : DP.play)}</button><button class="ib dlx" data-a="del" aria-label="Cancel">${svg(IC.close)}</button>`}</div>`;
 }
 
+let dlSig = "", usageAt = 0;
+
 async function paintDl(offline) {
   const list = $("dlist");
   if (!list) return;
   const items = dl.all();
   const run = items.filter((d) => d.state !== "done"), done = items.filter((d) => d.state === "done");
-  document.querySelectorAll(".utabs button").forEach((b) => { b.classList.toggle("on", b.dataset.t === dlTab); b.textContent = (b.dataset.t === "run" ? "Downloading (" + run.length + ")" : "Offline (" + done.length + ")"); });
-  const cur = dlTab === "run" ? run : done;
-  list.innerHTML = cur.length ? cur.map((d) => dlRow(d, dlTab === "off")).join("")
-    : `<div class="empty">${svg(DP.down, "fi big")}<b>${dlTab === "run" ? "Nothing downloading" : "Nothing saved offline"}</b><p class="muted center">${dlTab === "run" ? "Open a movie and tap the download button to watch it without internet." : "Downloaded movies appear here and play without internet."}</p></div>`;
-  list.querySelectorAll(".dli").forEach((r) => {
-    const id = r.dataset.id, d = dl.get(id);
-    r.querySelector(".dlt").onclick = () => { if (d.state === "done") playOffline(d, offline); };
-    r.querySelectorAll(".dlx").forEach((b) => (b.onclick = (e) => {
-      e.stopPropagation();
-      if (b.dataset.a === "pp") { if (d.state === "run" || d.state === "queued") dl.pause(id); else dl.resume(id); }
-      else confirmBox(d.state === "done" ? "Remove download?" : "Cancel download?", "The saved data for this file will be deleted from this device.", "Remove", () => dl.remove(id));
-    }));
+  document.querySelectorAll(".utabs button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.t === dlTab);
+    const t = b.dataset.t === "run" ? "Downloading (" + run.length + ")" : "Offline (" + done.length + ")";
+    if (b.textContent !== t) b.textContent = t;
   });
+  const cur = dlTab === "run" ? run : done;
+  const sig = dlTab + "|" + cur.map((d) => d.id + d.state).join(",");
+  if (sig !== dlSig) {
+    dlSig = sig;
+    list.innerHTML = cur.length ? cur.map((d) => dlRow(d, dlTab === "off")).join("")
+      : `<div class="empty">${svg(DP.down, "fi big")}<b>${dlTab === "run" ? "Nothing downloading" : "Nothing saved offline"}</b><p class="muted center">${dlTab === "run" ? "Open a movie and tap the download button to watch it without internet." : "Downloaded movies appear here and play without internet."}</p></div>`;
+    list.querySelectorAll(".dli").forEach((r) => {
+      const id = r.dataset.id;
+      r.querySelector(".dlt").onclick = () => { const d = dl.get(id); if (d && d.state === "done") playOffline(d, offline); };
+      r.querySelectorAll(".dlx").forEach((b) => (b.onclick = (e) => {
+        e.stopPropagation();
+        const d = dl.get(id);
+        if (!d) return;
+        if (b.dataset.a === "pp") { if (d.state === "run" || d.state === "queued") dl.pause(id); else dl.resume(id); }
+        else if (d.state === "done") confirmBox("Remove download?", "The offline copy of this file will be deleted from this device.", "Remove", () => dl.remove(id));
+        else dl.remove(id);
+      }));
+    });
+  } else {
+    cur.forEach((d) => {
+      const r = list.querySelector('.dli[data-id="' + d.id.replace(/"/g, "") + '"]');
+      if (!r) return;
+      const bar = r.querySelector(".pbar2 i");
+      if (bar) bar.style.width = (d.size ? Math.round((d.done / d.size) * 100) : 0) + "%";
+      const sm = r.querySelector(".dlt small");
+      if (sm && dlTab === "run") sm.textContent = (d.state === "error" ? d.err || "Failed" : d.state === "paused" ? "Paused • " : "") + (d.state === "error" ? "" : sz(d.done) + " / " + sz(d.size));
+    });
+  }
+  const now = Date.now();
+  if (now - usageAt < 1500 && $("stor") && $("stor").firstChild) return;
+  usageAt = now;
   const u = await dl.usage();
   const s = $("stor");
-  if (s) s.innerHTML = `<div class="stl"><span>Storage used by downloads</span><button id="fr" class="tbtn">Free up space</button><span>${u.quota ? sz(u.used) + " / " + sz(u.quota) : sz(u.used)}</span></div><div class="sbar"><i style="width:${u.quota ? Math.max(2, Math.min(100, (u.used / u.quota) * 100)) : 2}%"></i></div>`;
+  if (s) s.innerHTML = `<div class="stl"><span>Storage used by downloads</span><span>${u.quota ? sz(u.used) + " / " + sz(u.quota) : sz(u.used)}</span></div><div class="sbar"><i style="width:${u.quota ? Math.max(2, Math.min(100, (u.used / u.quota) * 100)) : 2}%"></i></div><div class="sfr"><button id="fr" class="tbtn">Free up space</button></div>`;
   const fr = $("fr");
-  if (fr) fr.onclick = () => { dlTab = "off"; paintDl(offline); };
+  if (fr) fr.onclick = () => { dlTab = "off"; dlSig = ""; paintDl(offline); };
 }
 
 function playOffline(d, offline) {
@@ -778,6 +838,8 @@ function downloadsView(offline) {
     <div id="dlist"></div>
     <div id="stor" class="stor"></div>
     ${offline ? "" : tabsHtml("dl")}`);
+  dlSig = "";
+  usageAt = 0;
   document.querySelectorAll(".utabs button").forEach((b) => (b.onclick = () => { dlTab = b.dataset.t; paintDl(offline); }));
   paintDl(offline);
   if (!offline) bindTabs();
@@ -787,7 +849,7 @@ dl.onChange(() => { paintDlButtons(); if ($("dlist")) paintDl(!document.querySel
 
 function castHtml(v) {
   if (!v.cast || !v.cast.length) return "";
-  return `<h3>Cast & crew <small class="muted nopad">(tap a name)</small></h3><div class="cast">${v.cast.map((c) => `<button class="cm" data-p="${esc(c.n)}"><span class="cph">${c.p ? `<img src="${tmdb.img(c.p, "w185")}" loading="lazy" alt="">` : svg(IC.person, "fi ph")}</span><b>${esc(c.n)}</b><small>${esc(c.c || "")}</small></button>`).join("")}</div>`;
+  return `<h3 class="sec2">Cast & crew <small>(tap a name)</small></h3><div class="cast">${v.cast.map((c) => `<button class="cm" data-p="${esc(c.n)}"><span class="cph">${c.p ? `<img src="${tmdb.img(c.p, "w185")}" loading="lazy" alt="">` : svg(IC.person, "fi ph")}</span><b>${esc(c.n)}</b><small>${esc(c.c || "")}</small></button>`).join("")}</div>`;
 }
 
 async function castPhotos(g, again) {
@@ -987,8 +1049,12 @@ async function rescan(opts) {
       cursor,
       library.map((m) => m.name),
       (got) => {
-        const have = new Set(library.map((m) => m.id));
-        const fresh = got.filter((m) => !have.has(m.id));
+        const byId = new Map(library.map((m) => [m.id, m]));
+        const fresh = [];
+        got.forEach((m) => {
+          const e = byId.get(m.id);
+          if (e) { e.name = m.name; e.size = m.size; e.dur = m.dur; e.mime = m.mime; } else fresh.push(m);
+        });
         if (fresh.length) { library = library.concat(fresh); added += fresh.length; }
         saveSoon();
       }
@@ -1185,7 +1251,7 @@ function settingsPage(k) {
       crow("ch", "Watch history", hist + " KB", "Progress, watched marks and watch time", "Clear") +
       grp("Total") + arow("", "Movie library", lib + " KB") + arow("", "Lists and history", hist + " KB"), back);
     $("cd").onclick = () => confirmBox("Delete saved movie details?", "Posters and details will have to be fetched from TMDB again, which can take a while for a big library.", "Delete", () => {
-      library.forEach((m) => ["tmdb", "series", "name", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x]));
+      library.forEach((m) => ["tmdb", "series", "tname", "rating", "overview", "poster", "backdrop", "runtime", "genres", "cast", "tried"].forEach((x) => delete m[x]));
       put(LIB, JSON.stringify(library)); toast("Saved details deleted"); settingsPage("storage"); enrichAll();
     });
     $("cl").onclick = () => { home(); rescan({ reset: true }); };
@@ -1223,7 +1289,7 @@ function contactDialog() {
 }
 
 function aboutView() {
-  page("About", `<div class="abt"><img src="icon.png" width="72" height="72" alt=""><h2>NWFlix iOS</h2><p class="muted center">Version 1.0</p>
+  page("About", `<div class="abt"><img src="${BRAND}" width="72" height="72" alt=""><h2>NWFlix iOS</h2><p class="muted center">Version 1.0</p>
       <p class="muted center">Watch the movies in your own Telegram chats, without leaving the app.</p></div>
     ${grp("Developer")}${arow("", "Mohammed Rinshan", "NIGHTWALKER", "person")}${arow("ab", "Contact & report a bug", "Send a message to the developer", "mail")}
     ${grp("Credits")}${arow("", "Movie information", "This product uses the TMDB API but is not endorsed or certified by TMDB.")}
