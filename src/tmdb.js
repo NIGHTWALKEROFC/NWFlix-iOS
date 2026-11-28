@@ -82,7 +82,7 @@ async function details(id, kind = "movie") {
     : ((o.credits && o.credits.crew) || []).filter((c) => c.job === "Director").slice(0, 2).map((c) => ({ n: c.name, c: "Director", p: c.profile_path || "" }));
   const cast = ((o.credits && o.credits.cast) || []).slice(0, 10).map((c) => ({ n: c.name, c: c.character || "", p: c.profile_path || "" }));
   return {
-    tmdb: o.id, series: tv, name: o.title || o.name || "", year: yearOf(o.release_date || o.first_air_date), rating: o.vote_average || 0,
+    tmdb: o.id, series: tv, tname: o.title || o.name || "", year: yearOf(o.release_date || o.first_air_date), rating: o.vote_average || 0,
     overview: o.overview || "", poster: o.poster_path || "", backdrop: o.backdrop_path || "",
     runtime: tv ? (o.episode_run_time || [])[0] || 0 : o.runtime || 0,
     genres: (o.genres || []).map((g) => g.name).join(", "), cast: crew.concat(cast), pop: o.popularity || 0
